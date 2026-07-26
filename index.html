@@ -945,11 +945,6 @@ function renderRecepcao() {
         <option value="pt-BR-Standard-B">Masculina 3 — Standard B</option>
       </optgroup>
     </select>
-    <label class="label">Trilha Instrumental</label>
-    <select id="recInstrumental" style="margin-bottom:14px">
-      <option value="">Sem trilha</option>
-      <option value="rock" selected>🎸 Rock (Electronic Stylish Rock)</option>
-    </select>
     <div class="preview-text" id="recPreview">
       Atenção! O aluno [nome] está sendo solicitado(a) a comparecer à recepção. Obrigado!
     </div>
@@ -1129,57 +1124,27 @@ async function fireRecepcao() {
   const nome = document.getElementById('recNome')?.value?.trim();
   if (!nome) { showToast('⚠️ Digite o nome da pessoa!', 'error'); return; }
   const voiceName = document.getElementById('recVoz')?.value;
-  const instrumental = document.getElementById('recInstrumental')?.value;
   const text = `Atenção! O ${recType.toLowerCase()} ${nome} está sendo solicitado a comparecer à recepção. Obrigado!`;
 
   const btn = document.getElementById('recBtn');
   btn.disabled = true; btn.textContent = '⏳ Gerando áudio...';
-  showToast('🎙️ Gerando voz no Google TTS...', 'success');
 
   const audioUrl = await generateGoogleTTS(text, voiceName);
   if (!audioUrl) { btn.disabled=false; btn.textContent='📣 Chamar Agora'; return; }
 
   await spotifyPause();
-  showToast('⏸ Spotify pausado — tocando chamada', 'success');
   btn.textContent = '🔊 Tocando...';
 
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const ttsEl = new Audio(audioUrl);
-    const ttsSrc = ctx.createMediaElementSource(ttsEl);
-    const ttsGain = ctx.createGain();
-    ttsSrc.connect(ttsGain); ttsGain.connect(ctx.destination);
-    ttsGain.gain.value = 1;
-
-    let musicEl = null, musicGain = null;
-    const sampleUrl = getSampleUrl(instrumental);
-    if (sampleUrl) {
-      musicEl = new Audio(sampleUrl);
-      musicEl.crossOrigin = 'anonymous'; musicEl.loop = true;
-      const musicSrc = ctx.createMediaElementSource(musicEl);
-      musicGain = ctx.createGain();
-      musicSrc.connect(musicGain); musicGain.connect(ctx.destination);
-      musicGain.gain.value = 0.85; musicEl.play();
-      await wait(5000);
-      musicGain.gain.linearRampToValueAtTime(0.08, ctx.currentTime + 1.5);
-      await wait(1500);
-    }
-
-    ttsEl.play();
-    await new Promise(r => { ttsEl.onended = r; setTimeout(r, 30000); });
-
-    if (musicEl && musicGain) {
-      musicGain.gain.linearRampToValueAtTime(0.7, ctx.currentTime+1);
-      musicGain.gain.linearRampToValueAtTime(0, ctx.currentTime+2);
-      await wait(2000); musicEl.pause();
-    }
-    ctx.close();
+    const audio = new Audio(audioUrl);
+    audio.play();
+    await new Promise(r => { audio.onended = r; setTimeout(r, 15000); });
   } catch(e) { showToast('❌ Erro ao reproduzir: ' + e.message, 'error'); }
 
   await spotifyPlay();
   isPlaying = true;
   document.getElementById('playPauseBtn').textContent = '⏸';
-  showToast('▶ Spotify retomado', 'success');
+  showToast('✅ Chamada concluída — Spotify retomado', 'success');
   btn.disabled = false; btn.textContent = '📣 Chamar Agora';
 }
 
