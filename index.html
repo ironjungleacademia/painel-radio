@@ -458,6 +458,8 @@ async function generateGoogleTTS(text, voiceName) {
     return null;
   }
 }
+
+function updateVoiceSelects() {
   const selects = ['recVoz', 'spotVoice'];
   selects.forEach(id => {
     const sel = document.getElementById(id);
