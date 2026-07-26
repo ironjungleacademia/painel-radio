@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Iron Jungle — Painel de Spots</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;600;700&display=swap');
+:root {
+  --gold:#C9A84C; --gold-light:#E8C76A; --gold-dim:#8a6f2e;
+  --black:#0a0a0a; --dark:#111; --dark2:#1a1a1a; --dark3:#222; --dark4:#2a2a2a;
+  --text:#f0f0f0; --text-dim:#888; --green:#43a047; --red:#e53935; --blue:#1976d2;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Rajdhani',sans-serif;background:var(--black);color:var(--text);min-height:100vh}
+
+/* LAYOUT */
+.layout{display:flex;min-height:100vh}
+.sidebar{width:240px;background:var(--dark2);border-right:1px solid var(--dark3);display:flex;flex-direction:column;flex-shrink:0;position:fixed;height:100vh;overflow-y:auto}
+.main{margin-left:240px;flex:1;display:flex;flex-direction:column;min-height:100vh}
+.content{flex:1;padding:28px;overflow-y:auto}
+
+/* SIDEBAR */
+.sidebar-logo{padding:24px 20px;border-bottom:1px solid var(--dark3)}
+.logo-title{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:3px;color:var(--gold);margin-top:8px}
+.logo-sub{font-size:11px;color:var(--text-dim);letter-spacing:1px}
+.nav-item{padding:13px 20px;display:flex;align-items:center;gap:12px;color:var(--text-dim);cursor:pointer;font-weight:600;font-size:15px;transition:all .15s;border-left:3px solid transparent}
+.nav-item:hover{color:var(--text);background:rgba(255,255,255,.03)}
+.nav-item.active{color:var(--gold);border-left-color:var(--gold);background:rgba(201,168,76,.06)}
+.nav-icon{font-size:18px;width:22px;text-align:center}
+.nav-section{padding:12px 20px 6px;font-size:10px;letter-spacing:2px;color:var(--text-dim);text-transform:uppercase;font-weight:700}
+
+/* NOW PLAYING BAR */
+.np-bar{background:linear-gradient(90deg,#1a1200,var(--dark2));border-top:1px solid var(--gold-dim);padding:14px 24px;display:flex;align-items:center;gap:16px;position:sticky;bottom:0;z-index:10}
+.np-cover{width:48px;height:48px;border-radius:8px;background:var(--dark3);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;border:1px solid var(--gold-dim)}
+.np-info{flex:1;min-width:0}
+.np-title{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.np-artist{font-size:13px;color:var(--gold)}
+.np-progress{height:3px;background:var(--dark3);border-radius:2px;margin-top:6px}
+.np-fill{height:100%;background:var(--gold);border-radius:2px;transition:width .5s}
+.np-controls{display:flex;gap:8px;align-items:center}
+.np-btn{width:38px;height:38px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;transition:all .2s}
+.np-play{background:var(--gold);color:var(--black)}
+.np-play:hover{background:var(--gold-light)}
+.np-nav{background:var(--dark3);color:var(--text)}
+.np-nav:hover{background:var(--dark4)}
+.np-counter{background:var(--dark3);border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;text-align:center;flex-shrink:0}
+.np-counter span{color:var(--gold);font-family:'Bebas Neue',sans-serif;font-size:20px}
+
+/* CARDS */
+.card{background:var(--dark2);border-radius:14px;padding:22px;border:1px solid var(--dark4);margin-bottom:16px}
+.card-gold{border-color:var(--gold-dim);background:rgba(201,168,76,.04)}
+.page-title{font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:3px;color:var(--gold);margin-bottom:6px}
+.page-sub{font-size:13px;color:var(--text-dim);margin-bottom:24px}
+.section-title{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:2px;color:var(--gold);margin-bottom:14px}
+.label{font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);margin-bottom:7px;display:block}
+
+/* INPUTS */
+input,select,textarea{background:var(--dark3);border:1px solid var(--dark4);border-radius:8px;color:var(--text);font-family:'Rajdhani',sans-serif;font-size:15px;padding:10px 14px;width:100%;outline:none;transition:border .2s}
+input:focus,select:focus,textarea:focus{border-color:var(--gold)}
+input::placeholder,textarea::placeholder{color:var(--text-dim)}
+select option{background:var(--dark2)}
+
+/* BUTTONS */
+.btn{font-family:'Rajdhani',sans-serif;font-weight:700;font-size:14px;letter-spacing:1px;border:none;border-radius:8px;cursor:pointer;padding:11px 22px;transition:all .2s;text-transform:uppercase;display:inline-flex;align-items:center;gap:8px}
+.btn-gold{background:var(--gold);color:var(--black)}
+.btn-gold:hover{background:var(--gold-light)}
+.btn-outline{background:transparent;border:1.5px solid var(--gold);color:var(--gold)}
+.btn-outline:hover{background:var(--gold);color:var(--black)}
+.btn-dark{background:var(--dark3);color:var(--text)}
+.btn-dark:hover{background:var(--dark4)}
+.btn-red{background:var(--red);color:#fff}
+.btn-green{background:var(--green);color:#fff}
+.btn-green:hover{background:#388e3c}
+.btn-blue{background:var(--blue);color:#fff}
+.btn-sm{padding:7px 14px;font-size:12px}
+.btn-full{width:100%;justify-content:center}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* TOGGLE */
+.toggle{width:44px;height:24px;background:var(--dark4);border-radius:12px;position:relative;transition:background .2s;flex-shrink:0;cursor:pointer}
+.toggle.on{background:var(--gold)}
+.toggle::after{content:'';width:18px;height:18px;background:#fff;border-radius:50%;position:absolute;top:3px;left:3px;transition:left .2s}
+.toggle.on::after{left:23px}
+.toggle-row{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.toggle-label{font-weight:600;font-size:15px}
+
+/* SPOTS LIST */
+.spot-item{display:flex;align-items:center;gap:12px;padding:14px;background:var(--dark3);border-radius:10px;margin-bottom:10px;border:1px solid transparent;transition:border .2s}
+.spot-item:hover{border-color:var(--gold-dim)}
+.spot-item.active-spot{border-color:var(--green);background:rgba(67,160,71,.05)}
+.spot-cover{width:46px;height:46px;border-radius:8px;background:var(--dark4);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+.spot-info{flex:1;min-width:0}
+.spot-name{font-weight:700;font-size:15px}
+.spot-meta{font-size:12px;color:var(--text-dim);margin-top:2px}
+.spot-actions{display:flex;gap:8px;align-items:center;flex-shrink:0}
+.play-spot-btn{width:34px;height:34px;border-radius:50%;background:var(--gold);border:none;cursor:pointer;color:var(--black);font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.play-spot-btn:hover{background:var(--gold-light)}
+.play-spot-btn.playing{background:var(--red);color:#fff}
+
+/* BADGE */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase}
+.badge-gold{background:rgba(201,168,76,.15);color:var(--gold);border:1px solid var(--gold-dim)}
+.badge-green{background:rgba(67,160,71,.15);color:var(--green)}
+.badge-red{background:rgba(229,57,53,.15);color:var(--red)}
+.badge-blue{background:rgba(25,118,210,.15);color:#64b5f6}
+
+/* MIXER */
+.mixer-timeline{display:flex;gap:3px;height:10px;border-radius:5px;overflow:hidden;background:var(--dark3);margin:14px 0 5px}
+.tl{height:100%;border-radius:2px;opacity:.25;transition:opacity .4s}
+.tl.on{opacity:1}
+.tl-a{background:var(--gold);flex:2}
+.tl-b{background:linear-gradient(to right,var(--gold),#555);flex:1}
+.tl-c{background:var(--blue);flex:3}
+.tl-d{background:linear-gradient(to right,#555,var(--gold));flex:1}
+.tl-e{background:var(--gold);flex:1}
+.tl-labels{display:flex;gap:3px;margin-bottom:16px}
+.tl-lbl{font-size:10px;color:var(--text-dim);text-align:center}
+.tl-lbl.a{flex:2}.tl-lbl.b{flex:1}.tl-lbl.c{flex:3;color:#90caf9}.tl-lbl.d{flex:1}.tl-lbl.e{flex:1}
+.meters{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.meter-wrap{background:var(--dark3);border-radius:10px;padding:12px}
+.meter-lbl{font-size:11px;color:var(--text-dim);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px}
+.meter-bg{height:8px;background:var(--dark4);border-radius:4px;overflow:hidden}
+.meter-fill{height:100%;border-radius:4px;transition:width .1s;width:0%}
+.m-music{background:linear-gradient(to right,var(--gold),var(--gold-light))}
+.m-tts{background:linear-gradient(to right,var(--blue),#64b5f6)}
+.meter-val{font-family:'Bebas Neue',sans-serif;font-size:18px;margin-top:4px}
+
+/* UPLOAD AREA */
+.upload-area{border:2px dashed var(--dark4);border-radius:10px;padding:24px;text-align:center;cursor:pointer;transition:all .2s;background:var(--dark3)}
+.upload-area:hover,.upload-area.dragover{border-color:var(--gold);background:rgba(201,168,76,.05)}
+.upload-icon{font-size:36px;margin-bottom:8px}
+.upload-text{font-weight:600;font-size:15px;margin-bottom:4px}
+.upload-sub{font-size:12px;color:var(--text-dim)}
+.upload-done{border-color:var(--green);background:rgba(67,160,71,.05)}
+
+/* STATUS */
+.status-box{background:var(--dark3);border-radius:10px;padding:14px;display:flex;align-items:center;gap:12px;margin-bottom:14px;border-left:3px solid var(--gold-dim)}
+.status-icon{font-size:24px;flex-shrink:0}
+
+/* GRID */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+
+/* STAT CARD */
+.stat-card{background:var(--dark2);border-radius:12px;padding:18px;border:1px solid var(--dark3);position:relative;overflow:hidden}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.stat-card.gold::before{background:var(--gold)}
+.stat-card.green::before{background:var(--green)}
+.stat-card.red::before{background:var(--red)}
+.stat-label{font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px}
+.stat-value{font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:2px;line-height:1}
+.stat-icon-bg{position:absolute;right:14px;top:14px;font-size:26px;opacity:.12}
+
+/* RECEPTION */
+.person-type-btns{display:flex;gap:12px;margin-bottom:14px}
+.person-type-btn{flex:1;padding:14px;border-radius:10px;border:2px solid var(--dark4);background:var(--dark3);color:var(--text-dim);font-family:'Rajdhani',sans-serif;font-weight:700;font-size:16px;cursor:pointer;transition:all .2s;text-align:center}
+.person-type-btn.active{border-color:var(--gold);color:var(--gold);background:rgba(201,168,76,.1)}
+.preview-text{background:var(--dark3);border-radius:10px;padding:14px;font-size:14px;color:var(--text-dim);margin:12px 0;line-height:1.6;border-left:3px solid var(--gold);font-style:italic}
+
+/* SPOTIFY AUTH */
+.auth-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at top,#1a1500,var(--black) 60%);padding:20px}
+.auth-box{background:var(--dark2);border:1px solid var(--gold-dim);border-radius:20px;padding:48px 40px;width:100%;max-width:440px;text-align:center;box-shadow:0 0 60px rgba(201,168,76,.08)}
+.auth-title{font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:4px;color:var(--gold);margin:16px 0 8px}
+.auth-sub{color:var(--text-dim);font-size:14px;margin-bottom:32px;line-height:1.6}
+.spotify-btn{width:100%;padding:16px;background:#1DB954;border:none;border-radius:12px;color:#fff;font-family:'Rajdhani',sans-serif;font-size:17px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:12px;transition:all .2s;letter-spacing:1px}
+.spotify-btn:hover{background:#1ed760}
+.auth-note{font-size:12px;color:var(--text-dim);margin-top:16px;line-height:1.5}
+
+/* TOAST */
+.toast{position:fixed;top:20px;right:20px;background:var(--dark2);color:var(--text);padding:14px 20px;border-radius:10px;font-weight:700;font-size:14px;z-index:999;border:1px solid var(--gold-dim);box-shadow:0 4px 20px rgba(0,0,0,.4);animation:slideIn .3s ease;max-width:320px}
+.toast.success{border-color:var(--green)}
+.toast.error{border-color:var(--red)}
+@keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+
+/* MODAL */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:100;display:flex;align-items:center;justify-content:center;padding:20px}
+.modal{background:var(--dark2);border-radius:16px;padding:28px;width:100%;max-width:520px;border:1px solid var(--gold-dim);max-height:90vh;overflow-y:auto}
+.modal-title{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:2px;color:var(--gold);margin-bottom:20px}
+
+/* SCROLLBAR */
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:var(--dark)}
+::-webkit-scrollbar-thumb{background:var(--dark4);border-radius:3px}
+
+.sep{height:1px;background:var(--dark3);margin:18px 0}
+.flex{display:flex;align-items:center;gap:10px}
+.flex-between{display:flex;align-items:center;justify-content:space-between}
+</style>
+</head>
+<body>
+
+<div id="authScreen" class="auth-screen">
+  <div class="auth-box">
+    <div style="font-size:70px">🦁</div>
+    <div class="auth-title">IRON JUNGLE</div>
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:3px;color:var(--text-dim);margin-bottom:4px">GYM · PAINEL DE SPOTS</div>
+    <div class="auth-sub">Conecte sua conta do Spotify Premium para controlar a reprodução e gerenciar os spots da academia.</div>
+    <button class="spotify-btn" onclick="loginSpotify()">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+      Conectar com Spotify
+    </button>
+    <div class="auth-note">⚠️ Necessário Spotify Premium ativo e aberto no computador da academia.</div>
+  </div>
+</div>
+
+<div id="appLayout" class="layout" style="display:none">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <div style="font-size:40px">🦁</div>
+      <div class="logo-title">IRON JUNGLE</div>
+      <div class="logo-sub">PAINEL DE SPOTS</div>
+    </div>
+    <div class="nav-section">Menu</div>
+    <div class="nav-item active" onclick="showPage('dashboard')" id="nav-dashboard">
+      <span class="nav-icon">📊</span> Dashboard
+    </div>
+    <div class="nav-item" onclick="showPage('spots')" id="nav-spots">
+      <span class="nav-icon">🎙️</span> Meus Spots
+    </div>
+    <div class="nav-item" onclick="showPage('criar')" id="nav-criar">
+      <span class="nav-icon">➕</span> Criar Spot
+    </div>
+    <div class="nav-item" onclick="showPage('recepcao')" id="nav-recepcao">
+      <span class="nav-icon">📣</span> Chamada à Recepção
+    </div>
+    <div class="nav-item" onclick="showPage('config')" id="nav-config">
+      <span class="nav-icon">⚙️</span> Configurações
+    </div>
+    <div style="margin-top:auto;padding:16px 20px;border-top:1px solid var(--dark3)">
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px" id="spotifyUser">Conectado</div>
+      <button class="btn btn-dark btn-sm btn-full" onclick="logout()">🚪 Sair</button>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="content" id="pageContent"></div>
+    <!-- NOW PLAYING BAR -->
+    <div class="np-bar">
+      <div class="np-cover" id="npCover">🎵</div>
+      <div class="np-info">
+        <div class="np-title" id="npTitle">Nenhuma música tocando</div>
+        <div class="np-artist" id="npArtist">Abra o Spotify no computador</div>
+        <div class="np-progress"><div class="np-fill" id="npFill" style="width:0%"></div></div>
+      </div>
+      <div class="np-counter">
+        🎵 <span id="songCounter">0</span>/<span id="spotInterval">3</span>
+        <div style="font-size:10px;color:var(--text-dim)">próx. spot</div>
+      </div>
+      <div class="np-controls">
+        <button class="np-btn np-nav" onclick="spotifyPrev()" title="Anterior">⏮</button>
+        <button class="np-btn np-play" id="playPauseBtn" onclick="togglePlayPause()">⏸</button>
+        <button class="np-btn np-nav" onclick="spotifyNext()" title="Próxima">⏭</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CRIAR/EDITAR SPOT -->
+<div class="modal-bg" id="modalCriar" style="display:none">
+  <div class="modal">
+    <div class="flex-between" style="margin-bottom:20px">
+      <div class="modal-title">🎙️ <span id="modalTitleText">CRIAR SPOT</span></div>
+      <button class="btn btn-dark btn-sm" onclick="closeModal()">✕ Fechar</button>
+    </div>
+    <label class="label">Nome do Spot</label>
+    <input id="spotNameInput" placeholder="Ex: Foco no Treino" style="margin-bottom:14px">
+    <label class="label">Trilha Instrumental</label>
+    <select id="spotInstrumental" style="margin-bottom:14px">
+      <option value="">Sem trilha instrumental</option>
+      <option value="rock">🎸 Rock / Metal</option>
+      <option value="dance">🎹 Dance / Eletrônico</option>
+      <option value="pop">🎵 Pop</option>
+      <option value="hiphop">🎤 Hip-Hop</option>
+      <option value="custom">📁 Upload personalizado...</option>
+    </select>
+    <div id="customInstrumentalUpload" style="display:none;margin-bottom:14px">
+      <label class="label">Upload da Trilha Instrumental (MP3)</label>
+      <div class="upload-area" id="instrumentalUploadArea" onclick="document.getElementById('instrumentalFile').click()">
+        <div class="upload-icon">🎸</div>
+        <div class="upload-text">Clique para selecionar</div>
+        <div class="upload-sub">Arquivo MP3 da trilha instrumental</div>
+      </div>
+      <input type="file" id="instrumentalFile" accept="audio/*" style="display:none" onchange="handleInstrumentalUpload(this)">
+    </div>
+    <label class="label">Áudio do Locutor (TTS — gerado no ElevenLabs)</label>
+    <div class="upload-area" id="ttsUploadArea" onclick="document.getElementById('ttsFile').click()" style="margin-bottom:14px">
+      <div class="upload-icon">🎙️</div>
+      <div class="upload-text">Clique para selecionar</div>
+      <div class="upload-sub">Arquivo MP3 gerado no ElevenLabs</div>
+    </div>
+    <input type="file" id="ttsFile" accept="audio/*" style="display:none" onchange="handleTtsUpload(this)">
+    <label class="label">Duração da Intro Instrumental</label>
+    <select id="introDuration" style="margin-bottom:14px">
+      <option value="3">3 segundos</option>
+      <option value="4">4 segundos</option>
+      <option value="5" selected>5 segundos</option>
+    </select>
+    <label class="label">Voz utilizada</label>
+    <select id="spotVoice" style="margin-bottom:20px">
+      <option value="feminina">🎙 Voz Feminina (Vitória)</option>
+      <option value="masculina">🎙 Voz Masculina (Beto)</option>
+    </select>
+
+    <!-- MIXER PREVIEW -->
+    <div id="mixerSection" style="display:none">
+      <div class="sep"></div>
+      <div class="section-title">🎚️ Preview da Mixagem</div>
+      <div class="status-box" id="mixStatus">
+        <div class="status-icon" id="mixIcon">🎵</div>
+        <div>
+          <div style="font-weight:700;font-size:15px" id="mixText">Pronto para mixar</div>
+          <div style="font-size:12px;color:var(--text-dim)" id="mixSub">Clique em Preview para testar</div>
+        </div>
+      </div>
+      <div class="mixer-timeline">
+        <div class="tl tl-a" id="mt0"></div><div class="tl tl-b" id="mt1"></div>
+        <div class="tl tl-c" id="mt2"></div><div class="tl tl-d" id="mt3"></div>
+        <div class="tl tl-e" id="mt4"></div>
+      </div>
+      <div class="tl-labels">
+        <div class="tl-lbl a">Intro</div><div class="tl-lbl b">Fade↓</div>
+        <div class="tl-lbl c">🎙 Locutor</div><div class="tl-lbl d">Fade↑</div><div class="tl-lbl e">Outro</div>
+      </div>
+      <div class="meters">
+        <div class="meter-wrap">
+          <div class="meter-lbl">🎸 Instrumental</div>
+          <div class="meter-bg"><div class="meter-fill m-music" id="mMusic"></div></div>
+          <div class="meter-val" id="mMusicV" style="color:var(--gold)">0%</div>
+        </div>
+        <div class="meter-wrap">
+          <div class="meter-lbl">🎙 Locutor</div>
+          <div class="meter-bg"><div class="meter-fill m-tts" id="mTts"></div></div>
+          <div class="meter-val" id="mTtsV" style="color:#64b5f6">0%</div>
+        </div>
+      </div>
+      <div class="flex" style="gap:10px">
+        <button class="btn btn-outline btn-sm" id="previewBtn" onclick="previewMix()">▶ Preview</button>
+        <button class="btn btn-dark btn-sm" id="stopPreviewBtn" onclick="stopPreview()" style="display:none">⏹ Parar</button>
+      </div>
+    </div>
+
+    <div class="sep"></div>
+    <div class="flex" style="gap:12px">
+      <button class="btn btn-dark" style="flex:1" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-gold" style="flex:2" onclick="saveSpot()">💾 Salvar Spot</button>
+    </div>
+  </div>
+</div>
+
+<div id="toastEl" class="toast" style="display:none"></div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────────────────────────
+const CLIENT_ID = 'b631bc37b95d473b8cf42f29c98ff818';
+const REDIRECT_URI = 'https://localhost:3000/callback';
+const SCOPES = 'user-read-playback-state user-modify-playback-state user-read-currently-playing';
+
+// ── STATE ────────────────────────────────────────────────────────────────────
+let accessToken = null;
+let spots = JSON.parse(localStorage.getItem('ij_spots') || '[]');
+let settings = JSON.parse(localStorage.getItem('ij_settings') || '{"interval":3,"volume":"Normal","dislikeLimit":10,"dislikeActive":true}');
+let songCount = 0;
+let currentPage = 'dashboard';
+let isSpotPlaying = false;
+let currentSpotAudio = null;
+let spotifyPolling = null;
+let lastTrackId = null;
+let isPlaying = true;
+
+// Mixer state
+let mixCtx = null;
+let mixMusicEl = null;
+let mixTtsEl = null;
+let mixPlaying = false;
+let ttsBlob = null;
+let instrumentalBlob = null;
+let editingSpotId = null;
+
+// ── AUTH PKCE ────────────────────────────────────────────────────────────────
+function generateRandomString(length) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const array = new Uint8Array(length);
+  crypto.getRandomValues(array);
+  return Array.from(array).map(b => chars[b % chars.length]).join('');
+}
+
+async function generateCodeChallenge(verifier) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(verifier);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+async function loginSpotify() {
+  const verifier = generateRandomString(64);
+  const challenge = await generateCodeChallenge(verifier);
+  localStorage.setItem('ij_verifier', verifier);
+  const params = new URLSearchParams({
+    client_id: CLIENT_ID,
+    response_type: 'code',
+    redirect_uri: REDIRECT_URI,
+    scope: SCOPES,
+    code_challenge_method: 'S256',
+    code_challenge: challenge,
+    show_dialog: true
+  });
+  window.location.href = 'https://accounts.spotify.com/authorize?' + params;
+}
+
+async function exchangeCode(code) {
+  const verifier = localStorage.getItem('ij_verifier');
+  const body = new URLSearchParams({
+    client_id: CLIENT_ID,
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: REDIRECT_URI,
+    code_verifier: verifier
+  });
+  const res = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body
+  });
+  const data = await res.json();
+  if (data.access_token) {
+    accessToken = data.access_token;
+    localStorage.setItem('ij_token', accessToken);
+    if (data.refresh_token) localStorage.setItem('ij_refresh', data.refresh_token);
+    localStorage.removeItem('ij_verifier');
+    return true;
+  }
+  return false;
+}
+
+async function refreshToken() {
+  const refresh = localStorage.getItem('ij_refresh');
+  if (!refresh) return false;
+  const body = new URLSearchParams({
+    client_id: CLIENT_ID,
+    grant_type: 'refresh_token',
+    refresh_token: refresh
+  });
+  const res = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body
+  });
+  const data = await res.json();
+  if (data.access_token) {
+    accessToken = data.access_token;
+    localStorage.setItem('ij_token', accessToken);
+    return true;
+  }
+  return false;
+}
+
+async function checkAuth() {
+  // Check URL for code (after Spotify redirect)
+  const urlParams = new URLSearchParams(window.location.search);
+  const code = urlParams.get('code');
+  if (code) {
+    window.history.replaceState({}, '', window.location.pathname);
+    const ok = await exchangeCode(code);
+    if (!ok) { showToast('❌ Erro ao autenticar com Spotify', 'error'); return; }
+  } else {
+    accessToken = localStorage.getItem('ij_token');
+    if (!accessToken) {
+      // Try refresh
+      const refreshed = await refreshToken();
+      if (!refreshed) return;
+    }
+  }
+  if (accessToken) {
+    document.getElementById('authScreen').style.display = 'none';
+    document.getElementById('appLayout').style.display = 'flex';
+    showPage('dashboard');
+    startPolling();
+    fetchCurrentTrack();
+  }
+}
+
+function logout() {
+  localStorage.removeItem('ij_token');
+  accessToken = null;
+  stopPolling();
+  document.getElementById('authScreen').style.display = 'flex';
+  document.getElementById('appLayout').style.display = 'none';
+}
+
+// ── SPOTIFY API ───────────────────────────────────────────────────────────────
+async function spotifyFetch(endpoint, method='GET', body=null) {
+  try {
+    const opts = { method, headers: { 'Authorization': 'Bearer ' + accessToken } };
+    if (body) { opts.body = JSON.stringify(body); opts.headers['Content-Type'] = 'application/json'; }
+    const res = await fetch('https://api.spotify.com/v1' + endpoint, opts);
+    if (res.status === 401) {
+      // Try refresh before logout
+      const refreshed = await refreshToken();
+      if (refreshed) return spotifyFetch(endpoint, method, body);
+      logout(); return null;
+    }
+    if (res.status === 204 || res.status === 202) return {};
+    if (!res.ok) return null;
+    return await res.json();
+  } catch(e) { return null; }
+}
+
+async function fetchCurrentTrack() {
+  const data = await spotifyFetch('/me/player');
+  if (!data || !data.item) {
+    document.getElementById('npTitle').textContent = 'Nenhuma música tocando';
+    document.getElementById('npArtist').textContent = 'Abra o Spotify no computador';
+    document.getElementById('npFill').style.width = '0%';
+    document.getElementById('npCover').textContent = '🎵';
+    document.getElementById('playPauseBtn').textContent = '▶';
+    return;
+  }
+  const track = data.item;
+  const playing = data.is_playing;
+  isPlaying = playing;
+  document.getElementById('playPauseBtn').textContent = playing ? '⏸' : '▶';
+  document.getElementById('npTitle').textContent = track.name;
+  document.getElementById('npArtist').textContent = track.artists.map(a=>a.name).join(', ');
+  const pct = data.progress_ms / track.duration_ms * 100;
+  document.getElementById('npFill').style.width = pct + '%';
+  if (track.album?.images?.[0]) {
+    document.getElementById('npCover').innerHTML = `<img src="${track.album.images[0].url}" style="width:100%;height:100%;border-radius:8px;object-fit:cover">`;
+  }
+  // Detect track change
+  if (track.id !== lastTrackId && lastTrackId !== null && playing) {
+    songCount++;
+    document.getElementById('songCounter').textContent = songCount;
+    if (songCount >= parseInt(settings.interval)) {
+      songCount = 0;
+      document.getElementById('songCounter').textContent = 0;
+      triggerAutoSpot();
+    }
+  }
+  lastTrackId = track.id;
+  // Update spotify user
+  if (!document.getElementById('spotifyUser').dataset.loaded) {
+    const user = await spotifyFetch('/me');
+    if (user) {
+      document.getElementById('spotifyUser').textContent = '🟢 ' + (user.display_name || user.id);
+      document.getElementById('spotifyUser').dataset.loaded = '1';
+    }
+  }
+}
+
+async function togglePlayPause() {
+  if (isPlaying) {
+    await spotifyFetch('/me/player/pause', 'PUT');
+    isPlaying = false;
+    document.getElementById('playPauseBtn').textContent = '▶';
+  } else {
+    await spotifyFetch('/me/player/play', 'PUT');
+    isPlaying = true;
+    document.getElementById('playPauseBtn').textContent = '⏸';
+  }
+}
+
+async function spotifyNext() {
+  await spotifyFetch('/me/player/next', 'POST');
+  setTimeout(fetchCurrentTrack, 800);
+}
+
+async function spotifyPrev() {
+  await spotifyFetch('/me/player/previous', 'POST');
+  setTimeout(fetchCurrentTrack, 800);
+}
+
+async function spotifyPause() { await spotifyFetch('/me/player/pause', 'PUT'); }
+async function spotifyPlay()  { await spotifyFetch('/me/player/play', 'PUT'); }
+
+function startPolling() {
+  spotifyPolling = setInterval(fetchCurrentTrack, 3000);
+}
+function stopPolling() {
+  if (spotifyPolling) clearInterval(spotifyPolling);
+}
+
+// ── AUTO SPOT ─────────────────────────────────────────────────────────────────
+async function triggerAutoSpot() {
+  const activeSpots = spots.filter(s => s.active);
+  if (activeSpots.length === 0) return;
+  const spot = activeSpots[Math.floor(Math.random() * activeSpots.length)];
+  showToast('🎙️ Tocando spot: ' + spot.name, 'success');
+  await playSpotById(spot.id, true);
+}
+
+async function playSpotById(id, auto=false) {
+  const spot = spots.find(s => s.id === id);
+  if (!spot) return;
+  if (isSpotPlaying) return;
+  isSpotPlaying = true;
+  // Pause Spotify
+  await spotifyPause();
+  showToast('⏸ Spotify pausado — tocando spot', 'success');
+  // Play spot audio
+  await playSpotAudio(spot);
+  // Resume Spotify
+  await spotifyPlay();
+  isPlaying = true;
+  document.getElementById('playPauseBtn').textContent = '⏸';
+  showToast('▶ Spotify retomado', 'success');
+  isSpotPlaying = false;
+}
+
+async function playSpotAudio(spot) {
+  return new Promise(async resolve => {
+    if (!spot.ttsData) { await wait(2000); resolve(); return; }
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const ttsEl = new Audio(spot.ttsData);
+      ttsEl.crossOrigin = 'anonymous';
+      const ttsSrc = ctx.createMediaElementSource(ttsEl);
+      const ttsGain = ctx.createGain();
+      ttsSrc.connect(ttsGain); ttsGain.connect(ctx.destination);
+      ttsGain.gain.value = 1;
+
+      let musicEl = null, musicGain = null;
+      if (spot.instrumentalData) {
+        musicEl = new Audio(spot.instrumentalData);
+        musicEl.crossOrigin = 'anonymous';
+        musicEl.loop = true;
+        const musicSrc = ctx.createMediaElementSource(musicEl);
+        musicGain = ctx.createGain();
+        musicSrc.connect(musicGain); musicGain.connect(ctx.destination);
+        musicGain.gain.value = 0;
+      }
+
+      const introDur = parseInt(spot.introDuration || 5) * 1000;
+
+      if (musicEl) {
+        musicGain.gain.value = 0.85;
+        musicEl.play();
+        await wait(introDur);
+        // Fade out music
+        const fadeStart = ctx.currentTime;
+        musicGain.gain.linearRampToValueAtTime(0.08, fadeStart + 1.5);
+        await wait(1500);
+      }
+
+      // Play TTS
+      ttsEl.play();
+      await new Promise(r => { ttsEl.onended = r; setTimeout(r, 30000); });
+
+      if (musicEl) {
+        const fi = ctx.currentTime;
+        musicGain.gain.linearRampToValueAtTime(0.7, fi + 1);
+        musicGain.gain.linearRampToValueAtTime(0, fi + 2);
+        await wait(2000);
+        musicEl.pause();
+      }
+      ctx.close();
+      resolve();
+    } catch(e) { await wait(3000); resolve(); }
+  });
+}
+
+// ── PAGES ─────────────────────────────────────────────────────────────────────
+function showPage(page) {
+  currentPage = page;
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  const nav = document.getElementById('nav-' + page);
+  if (nav) nav.classList.add('active');
+  const content = document.getElementById('pageContent');
+
+  if (page === 'dashboard') content.innerHTML = renderDashboard();
+  else if (page === 'spots') content.innerHTML = renderSpots();
+  else if (page === 'criar') { openModal(); return; }
+  else if (page === 'recepcao') content.innerHTML = renderRecepcao();
+  else if (page === 'config') content.innerHTML = renderConfig();
+}
+
+function renderDashboard() {
+  const total = spots.length;
+  const ativos = spots.filter(s=>s.active).length;
+  const tocados = spots.reduce((a,s)=>a+(s.playCount||0),0);
+  return `
+  <div class="page-title">Dashboard</div>
+  <div class="page-sub">Painel de controle — Iron Jungle Gym</div>
+  <div class="grid-3" style="margin-bottom:20px">
+    <div class="stat-card gold"><div class="stat-icon-bg">🎙️</div><div class="stat-label">Total de Spots</div><div class="stat-value" style="color:var(--gold)">${total}</div></div>
+    <div class="stat-card green"><div class="stat-icon-bg">✅</div><div class="stat-label">Spots Ativos</div><div class="stat-value" style="color:var(--green)">${ativos}</div></div>
+    <div class="stat-card red"><div class="stat-icon-bg">▶</div><div class="stat-label">Spots Tocados</div><div class="stat-value" style="color:var(--red)">${tocados}</div></div>
+  </div>
+  <div class="card card-gold" style="margin-bottom:16px">
+    <div class="section-title">📣 Chamada Rápida à Recepção</div>
+    <div style="font-size:14px;color:var(--text-dim);margin-bottom:14px">Toca imediatamente, pausando o Spotify.</div>
+    <button class="btn btn-gold btn-full" onclick="showPage('recepcao')">📣 Chamar Aluno ou Professor</button>
+  </div>
+  <div class="card">
+    <div class="flex-between" style="margin-bottom:14px">
+      <div class="section-title" style="margin-bottom:0">Spots Recentes</div>
+      <button class="btn btn-outline btn-sm" onclick="showPage('spots')">Ver todos</button>
+    </div>
+    ${spots.length === 0 ? '<div style="text-align:center;padding:24px;color:var(--text-dim)">📭 Nenhum spot criado ainda.<br><br><button class="btn btn-gold btn-sm" onclick="openModal()">+ Criar primeiro spot</button></div>' :
+      spots.slice(0,4).map(s => renderSpotItem(s)).join('')}
+  </div>`;
+}
+
+function renderSpots() {
+  return `
+  <div class="flex-between" style="margin-bottom:6px">
+    <div class="page-title">Meus Spots</div>
+    <button class="btn btn-gold" onclick="openModal()">➕ Criar Spot</button>
+  </div>
+  <div class="page-sub">${spots.length} spot(s) cadastrado(s)</div>
+  <div class="card">
+    <div style="margin-bottom:12px">
+      <label class="label">Intervalo entre Spots</label>
+      <select onchange="settings.interval=this.value;document.getElementById('spotInterval').textContent=this.value;saveSettings()" style="max-width:260px">
+        ${[1,2,3,4,5,6,8,10].map(n=>`<option value="${n}" ${settings.interval==n?'selected':''}>A cada ${n} música${n>1?'s':''}</option>`).join('')}
+      </select>
+    </div>
+    ${spots.length === 0 ? '<div style="text-align:center;padding:40px;color:var(--text-dim)">📭 Nenhum spot criado.<br><br><button class="btn btn-gold btn-sm" onclick="openModal()">+ Criar primeiro spot</button></div>' :
+      spots.map(s => renderSpotItem(s, true)).join('')}
+  </div>`;
+}
+
+function renderSpotItem(spot, showEdit=false) {
+  const icons = {rock:'🎸',dance:'🎹',pop:'🎵',hiphop:'🎤','':'🎙️',custom:'📁'};
+  const icon = icons[spot.instrumental] || '🎙️';
+  return `<div class="spot-item ${spot.active?'active-spot':''}" id="spotItem${spot.id}">
+    <div class="spot-cover">${icon}</div>
+    <div class="spot-info">
+      <div class="spot-name">${spot.name}</div>
+      <div class="spot-meta">${spot.voice==='feminina'?'🎙 Feminina':'🎙 Masculina'} · Intro ${spot.introDuration||5}s · Tocado ${spot.playCount||0}x</div>
+    </div>
+    <div class="spot-actions">
+      <div class="toggle ${spot.active?'on':''}" onclick="toggleSpot('${spot.id}')"></div>
+      <button class="play-spot-btn" onclick="playSpotById('${spot.id}')" title="Tocar agora">▶</button>
+      ${showEdit?`<button class="btn btn-dark btn-sm" onclick="editSpot('${spot.id}')">✏️</button>
+      <button class="btn btn-red btn-sm" onclick="deleteSpot('${spot.id}')">🗑</button>`:''}
+    </div>
+  </div>`;
+}
+
+function renderRecepcao() {
+  return `
+  <div class="page-title">📣 Chamada à Recepção</div>
+  <div class="page-sub">Toca imediatamente, pausando o Spotify automaticamente.</div>
+  <div class="card card-gold">
+    <div class="section-title">Quem está sendo chamado?</div>
+    <div class="person-type-btns">
+      <button class="person-type-btn active" id="btnAluno" onclick="selectType('Aluno')">🏋️ Aluno</button>
+      <button class="person-type-btn" id="btnProfessor" onclick="selectType('Professor')">👨‍🏫 Professor</button>
+    </div>
+    <label class="label">Nome</label>
+    <input id="recNome" placeholder="Digite o nome..." oninput="updatePreview()" style="margin-bottom:14px">
+    <label class="label">Voz</label>
+    <select id="recVoz" style="margin-bottom:14px">
+      <option value="feminina">🎙 Voz Feminina (Vitória)</option>
+      <option value="masculina">🎙 Voz Masculina (Beto)</option>
+    </select>
+    <div class="preview-text" id="recPreview">
+      Atenção! O aluno [nome] está sendo solicitado(a) a comparecer à recepção. Obrigado!
+    </div>
+    <button class="btn btn-gold btn-full" onclick="fireRecepcao()" style="margin-top:4px">
+      📣 Chamar Agora
+    </button>
+  </div>`;
+}
+
+function renderConfig() {
+  return `
+  <div class="page-title">Configurações</div>
+  <div class="page-sub">Ajuste o comportamento do sistema de spots.</div>
+  <div class="grid-2">
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="section-title">Reprodução</div>
+        <label class="label">Intervalo entre Spots</label>
+        <select style="margin-bottom:14px" onchange="settings.interval=this.value;document.getElementById('spotInterval').textContent=this.value;saveSettings()">
+          ${[1,2,3,4,5,6,8,10].map(n=>`<option value="${n}" ${settings.interval==n?'selected':''}>A cada ${n} música${n>1?'s':''}</option>`).join('')}
+        </select>
+        <label class="label">Volume dos Spots</label>
+        <select onchange="settings.volume=this.value;saveSettings()">
+          ${['Baixo','Normal','Alto'].map(v=>`<option ${settings.volume===v?'selected':''}>${v}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="section-title">Spotify</div>
+        <div style="font-size:14px;color:var(--text-dim);margin-bottom:16px;line-height:1.6">
+          O Spotify é pausado automaticamente quando um spot é reproduzido e retoma logo após o término.
+        </div>
+        <div class="toggle-row">
+          <div class="toggle on"></div>
+          <span class="toggle-label">Pausar Spotify durante spots</span>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle on"></div>
+          <span class="toggle-label">Retomar após spot</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div style="display:flex;justify-content:flex-end">
+    <button class="btn btn-gold" onclick="saveSettings();showToast('✅ Configurações salvas!','success')">Salvar</button>
+  </div>`;
+}
+
+// ── SPOT CRUD ─────────────────────────────────────────────────────────────────
+function openModal(id=null) {
+  editingSpotId = id;
+  ttsBlob = null; instrumentalBlob = null;
+  document.getElementById('modalTitleText').textContent = id ? 'EDITAR SPOT' : 'CRIAR SPOT';
+  document.getElementById('spotNameInput').value = '';
+  document.getElementById('spotInstrumental').value = '';
+  document.getElementById('spotVoice').value = 'feminina';
+  document.getElementById('introDuration').value = '5';
+  document.getElementById('ttsUploadArea').innerHTML = '<div class="upload-icon">🎙️</div><div class="upload-text">Clique para selecionar</div><div class="upload-sub">Arquivo MP3 gerado no ElevenLabs</div>';
+  document.getElementById('instrumentalUploadArea').innerHTML = '<div class="upload-icon">🎸</div><div class="upload-text">Clique para selecionar</div><div class="upload-sub">Arquivo MP3 da trilha instrumental</div>';
+  document.getElementById('customInstrumentalUpload').style.display = 'none';
+  document.getElementById('mixerSection').style.display = 'none';
+
+  if (id) {
+    const spot = spots.find(s=>s.id===id);
+    if (spot) {
+      document.getElementById('spotNameInput').value = spot.name;
+      document.getElementById('spotInstrumental').value = spot.instrumental || '';
+      document.getElementById('spotVoice').value = spot.voice || 'feminina';
+      document.getElementById('introDuration').value = spot.introDuration || '5';
+      if (spot.ttsData) {
+        document.getElementById('ttsUploadArea').innerHTML = '<div class="upload-icon">✅</div><div class="upload-text" style="color:var(--green)">Áudio carregado</div><div class="upload-sub">Clique para substituir</div>';
+        document.getElementById('ttsUploadArea').classList.add('upload-done');
+        ttsBlob = spot.ttsData;
+      }
+      if (spot.instrumentalData) {
+        instrumentalBlob = spot.instrumentalData;
+      }
+    }
+  }
+  document.getElementById('modalCriar').style.display = 'flex';
+  document.getElementById('spotInstrumental').onchange = function() {
+    document.getElementById('customInstrumentalUpload').style.display = this.value === 'custom' ? 'block' : 'none';
+    checkMixerReady();
+  };
+}
+
+function editSpot(id) { openModal(id); }
+
+function closeModal() {
+  stopPreview();
+  document.getElementById('modalCriar').style.display = 'none';
+  editingSpotId = null;
+}
+
+function handleTtsUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    ttsBlob = e.target.result;
+    document.getElementById('ttsUploadArea').innerHTML = `<div class="upload-icon">✅</div><div class="upload-text" style="color:var(--green)">${file.name}</div><div class="upload-sub">Clique para substituir</div>`;
+    document.getElementById('ttsUploadArea').classList.add('upload-done');
+    checkMixerReady();
+  };
+  reader.readAsDataURL(file);
+}
+
+function handleInstrumentalUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    instrumentalBlob = e.target.result;
+    document.getElementById('instrumentalUploadArea').innerHTML = `<div class="upload-icon">✅</div><div class="upload-text" style="color:var(--green)">${file.name}</div><div class="upload-sub">Clique para substituir</div>`;
+    document.getElementById('instrumentalUploadArea').classList.add('upload-done');
+    checkMixerReady();
+  };
+  reader.readAsDataURL(file);
+}
+
+function checkMixerReady() {
+  if (ttsBlob) {
+    document.getElementById('mixerSection').style.display = 'block';
+  }
+}
+
+function saveSpot() {
+  const name = document.getElementById('spotNameInput').value.trim();
+  if (!name) { showToast('⚠️ Digite o nome do spot!', 'error'); return; }
+  if (!ttsBlob) { showToast('⚠️ Faça upload do áudio do locutor!', 'error'); return; }
+
+  const instrumental = document.getElementById('spotInstrumental').value;
+  const voice = document.getElementById('spotVoice').value;
+  const introDuration = document.getElementById('introDuration').value;
+
+  if (editingSpotId) {
+    const idx = spots.findIndex(s=>s.id===editingSpotId);
+    if (idx !== -1) {
+      spots[idx] = { ...spots[idx], name, instrumental, voice, introDuration, ttsData: ttsBlob, instrumentalData: instrumentalBlob };
+    }
+    showToast('✅ Spot atualizado!', 'success');
+  } else {
+    spots.push({ id: Date.now().toString(), name, instrumental, voice, introDuration, ttsData: ttsBlob, instrumentalData: instrumentalBlob, active: true, playCount: 0, createdAt: new Date().toLocaleDateString('pt-BR') });
+    showToast('✅ Spot criado com sucesso!', 'success');
+  }
+  saveSpots();
+  closeModal();
+  showPage('spots');
+}
+
+function deleteSpot(id) {
+  if (!confirm('Remover este spot?')) return;
+  spots = spots.filter(s=>s.id!==id);
+  saveSpots();
+  showPage('spots');
+  showToast('🗑 Spot removido', 'error');
+}
+
+function toggleSpot(id) {
+  const spot = spots.find(s=>s.id===id);
+  if (spot) { spot.active = !spot.active; saveSpots(); showPage(currentPage); }
+}
+
+function saveSpots() { localStorage.setItem('ij_spots', JSON.stringify(spots)); }
+function saveSettings() { localStorage.setItem('ij_settings', JSON.stringify(settings)); document.getElementById('spotInterval').textContent = settings.interval; }
+
+// ── RECEPÇÃO ──────────────────────────────────────────────────────────────────
+let recType = 'Aluno';
+function selectType(type) {
+  recType = type;
+  document.getElementById('btnAluno').classList.toggle('active', type==='Aluno');
+  document.getElementById('btnProfessor').classList.toggle('active', type==='Professor');
+  updatePreview();
+}
+function updatePreview() {
+  const nome = document.getElementById('recNome')?.value || '[nome]';
+  const text = `Atenção! O ${recType.toLowerCase()} ${nome||'[nome]'} está sendo solicitado(a) a comparecer à recepção. Obrigado!`;
+  const el = document.getElementById('recPreview');
+  if (el) el.textContent = text;
+}
+async function fireRecepcao() {
+  const nome = document.getElementById('recNome')?.value?.trim();
+  if (!nome) { showToast('⚠️ Digite o nome da pessoa!', 'error'); return; }
+  showToast(`📣 Chamando ${recType} ${nome} à recepção!`, 'success');
+  await spotifyPause();
+  await wait(500);
+  // Simulate TTS (in production: call ElevenLabs API)
+  showToast('🎙️ Reproduzindo chamada...', 'success');
+  await wait(4000);
+  await spotifyPlay();
+  isPlaying = true;
+  document.getElementById('playPauseBtn').textContent = '⏸';
+  showToast('▶ Spotify retomado', 'success');
+}
+
+// ── MIXER PREVIEW ─────────────────────────────────────────────────────────────
+async function previewMix() {
+  if (mixPlaying) return;
+  mixPlaying = true;
+  document.getElementById('previewBtn').style.display = 'none';
+  document.getElementById('stopPreviewBtn').style.display = 'inline-flex';
+
+  const setMix = (icon, text, sub) => {
+    document.getElementById('mixIcon').textContent = icon;
+    document.getElementById('mixText').textContent = text;
+    document.getElementById('mixSub').textContent = sub;
+  };
+  const setMeters = (m, t) => {
+    document.getElementById('mMusic').style.width = m + '%';
+    document.getElementById('mTts').style.width = t + '%';
+    document.getElementById('mMusicV').textContent = Math.round(m) + '%';
+    document.getElementById('mTtsV').textContent = Math.round(t) + '%';
+  };
+  const setTL = n => { for(let i=0;i<5;i++) document.getElementById('mt'+i)?.classList.toggle('on', i<=n); };
+  const animMeters = (getMv, getTv, ms) => new Promise(resolve => {
+    const start = Date.now();
+    const id = setInterval(() => {
+      if (!mixPlaying) { clearInterval(id); resolve(); return; }
+      const t = Math.min((Date.now()-start)/ms, 1);
+      setMeters(getMv(t), getTv(t));
+      if (t >= 1) { clearInterval(id); resolve(); }
+    }, 50);
+  });
+
+  try {
+    mixCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const introDur = parseInt(document.getElementById('introDuration').value) * 1000;
+    let musicEl = null, musicGain = null;
+
+    // Instrumental
+    const hasInstrumental = instrumentalBlob || document.getElementById('spotInstrumental').value !== '';
+    if (hasInstrumental && instrumentalBlob) {
+      musicEl = new Audio(instrumentalBlob);
+      musicEl.crossOrigin = 'anonymous';
+      musicEl.loop = true;
+      const musicSrc = mixCtx.createMediaElementSource(musicEl);
+      musicGain = mixCtx.createGain();
+      musicSrc.connect(musicGain); musicGain.connect(mixCtx.destination);
+    }
+
+    // TTS
+    const ttsEl = new Audio(ttsBlob);
+    ttsEl.crossOrigin = 'anonymous';
+    const ttsSrc = mixCtx.createMediaElementSource(ttsEl);
+    const ttsGain = mixCtx.createGain();
+    ttsSrc.connect(ttsGain); ttsGain.connect(mixCtx.destination);
+    ttsGain.gain.value = 0;
+
+    // INTRO
+    setTL(0); setMix('🎸','Intro Instrumental','Tocando intro...');
+    if (musicEl && musicGain) { musicGain.gain.value = 0.85; musicEl.play(); }
+    await animMeters(()=>hasInstrumental?85:0, ()=>0, introDur);
+    if (!mixPlaying) return cleanup();
+
+    // FADE OUT
+    setTL(1); setMix('🔉','Fade Out...','Reduzindo instrumental...');
+    if (musicGain) musicGain.gain.linearRampToValueAtTime(0.08, mixCtx.currentTime+1.5);
+    await animMeters(t=>(0.85-0.77*t)*100, ()=>0, 1500);
+    if (!mixPlaying) return cleanup();
+
+    // TTS
+    setTL(2); setMix('🎙️','Locutor falando...','ElevenLabs TTS');
+    ttsGain.gain.value = 1; ttsEl.play();
+    const ttsDur = (ttsEl.duration > 0 ? ttsEl.duration : 4) * 1000;
+    await animMeters(()=>hasInstrumental?8:0, t=>Math.sin(t*Math.PI)*100, ttsDur);
+    if (!mixPlaying) return cleanup();
+
+    // FADE IN + OUTRO
+    setTL(3); setMix('🔊','Encerrando...','Instrumental volta e encerra');
+    ttsGain.gain.linearRampToValueAtTime(0, mixCtx.currentTime+0.5);
+    if (musicGain) {
+      musicGain.gain.linearRampToValueAtTime(0.7, mixCtx.currentTime+1);
+      musicGain.gain.linearRampToValueAtTime(0, mixCtx.currentTime+2);
+    }
+    setTL(4);
+    await animMeters(t=>t<.5?(t/.5)*70:(1-(t-.5)/.5)*70, t=>t<.25?(1-t/.25)*100:0, 2000);
+
+    setMix('✅','Preview concluído!','Spot pronto para salvar');
+    setMeters(0,0);
+  } catch(e) { setMix('❌','Erro no preview',e.message); }
+  cleanup();
+}
+
+function cleanup() {
+  mixPlaying = false;
+  try { mixCtx?.close(); } catch(e){}
+  document.getElementById('previewBtn').style.display = 'inline-flex';
+  document.getElementById('stopPreviewBtn').style.display = 'none';
+}
+
+function stopPreview() { mixPlaying = false; cleanup(); }
+
+// ── UTILS ─────────────────────────────────────────────────────────────────────
+function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function showToast(msg, type='') {
+  const el = document.getElementById('toastEl');
+  el.textContent = msg;
+  el.className = 'toast ' + type;
+  el.style.display = 'block';
+  clearTimeout(el._timeout);
+  el._timeout = setTimeout(() => el.style.display = 'none', 3500);
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+document.getElementById('spotInterval').textContent = settings.interval;
+checkAuth().catch(console.error);
+</script>
+</body>
+</html>
