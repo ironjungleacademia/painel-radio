@@ -186,6 +186,20 @@ select option{background:var(--dark2)}
 .sep{height:1px;background:var(--dark3);margin:18px 0}
 .flex{display:flex;align-items:center;gap:10px}
 .flex-between{display:flex;align-items:center;justify-content:space-between}
+
+/* GRADE AGENDAMENTO */
+.grade-dia{background:var(--dark3);border-radius:10px;padding:14px;margin-bottom:10px;border:1px solid var(--dark4);transition:border .2s}
+.grade-dia.ativo{border-color:var(--gold-dim);background:rgba(201,168,76,.06)}
+.grade-dia-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.grade-dia-nome{font-weight:700;font-size:15px}
+.grade-horarios{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.grade-horario-item{display:flex;align-items:center;gap:6px;background:var(--dark4);border-radius:6px;padding:5px 10px;font-size:13px;font-weight:600}
+.grade-horario-item button{background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;padding:0;line-height:1}
+.grade-add-horario{display:flex;gap:8px;align-items:center;margin-top:8px}
+.grade-add-horario input{max-width:120px;padding:7px 10px;font-size:14px}
+.grade-add-btn{padding:7px 14px;font-size:12px;white-space:nowrap}
+.cal-btn{width:30px;height:30px;border-radius:6px;background:var(--dark3);border:1px solid var(--dark4);cursor:pointer;color:var(--gold);display:flex;align-items:center;justify-content:center;font-size:16px;transition:all .2s;flex-shrink:0}
+.cal-btn:hover{background:var(--gold-dim)}
 </style>
 </head>
 <body>
@@ -303,27 +317,6 @@ select option{background:var(--dark2)}
       <option value="">Carregando vozes...</option>
     </select>
 
-    <!-- AGENDAMENTO -->
-    <div class="sep"></div>
-    <div class="section-title">⏰ Agendamento</div>
-    <div class="toggle-row" style="margin-bottom:12px">
-      <input type="checkbox" id="scheduleActive" style="width:auto;padding:0">
-      <span class="toggle-label">Agendar este spot em horário fixo</span>
-    </div>
-    <div id="scheduleOptions" style="display:none;background:var(--dark3);border-radius:10px;padding:14px;margin-bottom:14px">
-      <label class="label">Horário</label>
-      <input type="time" id="scheduleTime" style="margin-bottom:12px;max-width:160px">
-      <label class="label">Dias da Semana</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        ${['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].map((d,i)=>`
-        <label style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer">
-          <input type="checkbox" class="day-cb" id="day_${i}" value="${i}" style="width:auto;padding:0">
-          <span style="font-size:12px;font-weight:700">${d}</span>
-        </label>`).join('')}
-      </div>
-    </div>
-
-    <!-- MIXER PREVIEW -->
     <div id="mixerSection" style="display:none">
       <div class="sep"></div>
       <div class="section-title">🎚️ Preview da Mixagem</div>
@@ -369,6 +362,29 @@ select option{background:var(--dark2)}
   </div>
 </div>
 
+<!-- MODAL GRADE DE AGENDAMENTO -->
+<div class="modal-bg" id="modalAgendamento" style="display:none">
+  <div class="modal" style="max-width:480px">
+    <div class="flex-between" style="margin-bottom:6px">
+      <div class="modal-title">⏰ GRADE DE AGENDAMENTO</div>
+      <button class="btn btn-dark btn-sm" onclick="closeAgendamento()">✕</button>
+    </div>
+    <div style="font-size:13px;color:var(--text-dim);margin-bottom:20px" id="agendamentoSpotName"></div>
+
+    <!-- DIAS -->
+    <div id="agendamentoDias"></div>
+
+    <div class="sep"></div>
+    <div class="flex-between">
+      <button class="btn btn-red btn-sm" onclick="clearAgendamento()">🗑 Remover todos</button>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-dark" onclick="closeAgendamento()">Cancelar</button>
+        <button class="btn btn-gold" onclick="saveAgendamento()">💾 Salvar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="toastEl" class="toast" style="display:none"></div>
 
 <script>
@@ -404,10 +420,30 @@ async function fetchElevenVoices() {
     const res = await fetch('https://api.elevenlabs.io/v1/voices', {
       headers: { 'xi-api-key': ELEVEN_API_KEY }
     });
+    if (!res.ok) throw new Error('Status ' + res.status);
     const data = await res.json();
     elevenVoices = data.voices || [];
+    // Atualizar selects se já estiverem na tela
+    updateVoiceSelects();
     return elevenVoices;
-  } catch(e) { return []; }
+  } catch(e) {
+    console.error('Erro ao carregar vozes ElevenLabs:', e);
+    showToast('⚠️ Erro ao carregar vozes: ' + e.message, 'error');
+    return [];
+  }
+}
+
+function updateVoiceSelects() {
+  const selects = ['recVoz', 'spotVoice'];
+  selects.forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const current = sel.value;
+    sel.innerHTML = elevenVoices.length > 0
+      ? elevenVoices.map(v=>`<option value="${v.voice_id}">${v.name}</option>`).join('')
+      : '<option value="">Nenhuma voz encontrada</option>';
+    if (current) sel.value = current;
+  });
 }
 
 async function generateTTS(text, voiceId) {
@@ -593,16 +629,14 @@ function stopScheduler() { if (schedulerInterval) clearInterval(schedulerInterva
 
 function checkScheduledSpots() {
   const now = new Date();
-  const currentDay = now.getDay(); // 0=Dom, 6=Sab
+  const currentDay = now.getDay();
   const currentTime = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
   spots.forEach(spot => {
-    if (!spot.scheduleActive || isSpotPlaying) return;
-    if (!spot.scheduledDays || !spot.scheduledDays.includes(currentDay)) return;
-    if (spot.scheduledTime !== currentTime) return;
-    // Avoid playing twice in same minute
-    const lastPlayed = spot.lastScheduledPlay || '';
-    const nowKey = now.toDateString() + currentTime;
-    if (lastPlayed === nowKey) return;
+    if (!spot.active || isSpotPlaying) return;
+    const daySchedule = (spot.schedule || {})[currentDay] || [];
+    if (!daySchedule.includes(currentTime)) return;
+    const nowKey = now.toDateString() + '_' + currentTime + '_' + spot.id;
+    if (spot.lastScheduledPlay === nowKey) return;
     spot.lastScheduledPlay = nowKey;
     saveSpots();
     showToast('⏰ Spot agendado: ' + spot.name, 'success');
@@ -700,7 +734,7 @@ function showPage(page) {
   if (page === 'dashboard') content.innerHTML = renderDashboard();
   else if (page === 'spots') content.innerHTML = renderSpots();
   else if (page === 'criar') { openModal(); return; }
-  else if (page === 'recepcao') content.innerHTML = renderRecepcao();
+  else if (page === 'recepcao') renderRecepcao();
   else if (page === 'config') content.innerHTML = renderConfig();
 }
 
@@ -761,27 +795,109 @@ function renderSpots() {
 function renderSpotItem(spot, showEdit=false) {
   const icons = {rock:'🎸',metal:'🎸',dance:'🎹',pop:'🎵',hiphop:'🎤','':'🎙️',custom:'📁'};
   const icon = icons[spot.instrumental] || '🎙️';
-  const agendado = spot.scheduleActive ? `<span class="badge badge-blue">⏰ ${DIAS_SEMANA[spot.scheduledDays?.[0]||0]} ${spot.scheduledTime||''}</span>` : '';
+  const totalAgendamentos = Object.values(spot.schedule || {}).reduce((a,v)=>a+(v.length||0),0);
+  const agendado = totalAgendamentos > 0 ? `<span class="badge badge-blue">⏰ ${totalAgendamentos} horário(s)</span>` : '';
   return `<div class="spot-item ${spot.active?'active-spot':''}" id="spotItem${spot.id}">
     <div class="spot-cover">${icon}</div>
     <div class="spot-info">
       <div class="spot-name">${spot.name} ${agendado}</div>
-      <div class="spot-meta">${spot.voice==='feminina'?'🎙 Feminina':'🎙 Masculina'} · Intro ${spot.introDuration||5}s · Tocado ${spot.playCount||0}x</div>
+      <div class="spot-meta">Intro ${spot.introDuration||5}s · Tocado ${spot.playCount||0}x</div>
     </div>
     <div class="spot-actions">
       <div class="toggle ${spot.active?'on':''}" onclick="toggleSpot('${spot.id}')"></div>
       <button class="play-spot-btn" onclick="playSpotById('${spot.id}')" title="Tocar agora">▶</button>
-      ${showEdit?`<button class="btn btn-dark btn-sm" onclick="editSpot('${spot.id}')">✏️</button>
+      ${showEdit?`
+      <button class="cal-btn" onclick="openAgendamento('${spot.id}')" title="Agendar">📅</button>
+      <button class="btn btn-dark btn-sm" onclick="editSpot('${spot.id}')">✏️</button>
       <button class="btn btn-red btn-sm" onclick="deleteSpot('${spot.id}')">🗑</button>`:''}
     </div>
   </div>`;
+}
+
+// ── AGENDAMENTO ───────────────────────────────────────────────────────────────
+let agendamentoSpotId = null;
+let agendamentoTemp = {}; // {0: ['08:00','19:00'], 1: ['07:30'], ...}
+
+function openAgendamento(spotId) {
+  agendamentoSpotId = spotId;
+  const spot = spots.find(s=>s.id===spotId);
+  if (!spot) return;
+  agendamentoTemp = JSON.parse(JSON.stringify(spot.schedule || {}));
+  document.getElementById('agendamentoSpotName').textContent = '📻 ' + spot.name;
+  renderGradeDias();
+  document.getElementById('modalAgendamento').style.display = 'flex';
+}
+
+function renderGradeDias() {
+  const dias = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+  let html = '';
+  dias.forEach((dia, i) => {
+    const horarios = agendamentoTemp[i] || [];
+    const ativo = horarios.length > 0;
+    html += `<div class="grade-dia ${ativo?'ativo':''}" id="gradeDia${i}">
+      <div class="grade-dia-header">
+        <span class="grade-dia-nome">${dia}</span>
+        <span class="badge ${ativo?'badge-gold':'badge-red'}">${ativo?horarios.length+' horário(s)':'sem horário'}</span>
+      </div>
+      <div class="grade-horarios" id="horarios${i}">
+        ${horarios.map((h,hi)=>`
+          <div class="grade-horario-item">
+            ⏰ ${h}
+            <button onclick="removeHorario(${i},${hi})">✕</button>
+          </div>`).join('')}
+      </div>
+      <div class="grade-add-horario">
+        <input type="time" id="inputHorario${i}" style="width:130px;padding:7px 10px;font-size:14px">
+        <button class="btn btn-outline btn-sm grade-add-btn" onclick="addHorario(${i})">+ Adicionar</button>
+      </div>
+    </div>`;
+  });
+  document.getElementById('agendamentoDias').innerHTML = html;
+}
+
+function addHorario(dia) {
+  const input = document.getElementById('inputHorario' + dia);
+  const horario = input.value;
+  if (!horario) { showToast('⚠️ Selecione um horário!', 'error'); return; }
+  if (!agendamentoTemp[dia]) agendamentoTemp[dia] = [];
+  if (agendamentoTemp[dia].includes(horario)) { showToast('⚠️ Horário já adicionado!', 'error'); return; }
+  agendamentoTemp[dia].push(horario);
+  agendamentoTemp[dia].sort();
+  input.value = '';
+  renderGradeDias();
+}
+
+function removeHorario(dia, idx) {
+  agendamentoTemp[dia].splice(idx, 1);
+  if (agendamentoTemp[dia].length === 0) delete agendamentoTemp[dia];
+  renderGradeDias();
+}
+
+function saveAgendamento() {
+  const spot = spots.find(s=>s.id===agendamentoSpotId);
+  if (!spot) return;
+  spot.schedule = agendamentoTemp;
+  saveSpots();
+  closeAgendamento();
+  showPage(currentPage);
+  showToast('✅ Agendamento salvo!', 'success');
+}
+
+function clearAgendamento() {
+  agendamentoTemp = {};
+  renderGradeDias();
+}
+
+function closeAgendamento() {
+  document.getElementById('modalAgendamento').style.display = 'none';
+  agendamentoSpotId = null;
 }
 
 function renderRecepcao() {
   const voiceOptions = elevenVoices.length > 0
     ? elevenVoices.map(v=>`<option value="${v.voice_id}">${v.name}</option>`).join('')
     : '<option value="">Carregando vozes...</option>';
-  return `
+  const html = `
   <div class="page-title">📣 Chamada à Recepção</div>
   <div class="page-sub">Toca imediatamente via ElevenLabs, pausando o Spotify.</div>
   <div class="card card-gold">
@@ -792,7 +908,10 @@ function renderRecepcao() {
     </div>
     <label class="label">Nome</label>
     <input id="recNome" placeholder="Digite o nome..." oninput="updatePreview()" style="margin-bottom:14px">
-    <label class="label">Voz (ElevenLabs)</label>
+    <div class="flex-between" style="margin-bottom:7px">
+      <label class="label" style="margin-bottom:0">Voz (ElevenLabs)</label>
+      <button class="btn btn-dark btn-sm" onclick="reloadVoices()">🔄 Recarregar vozes</button>
+    </div>
     <select id="recVoz" style="margin-bottom:14px">${voiceOptions}</select>
     <label class="label">Trilha Instrumental</label>
     <select id="recInstrumental" style="margin-bottom:14px">
@@ -806,6 +925,11 @@ function renderRecepcao() {
       📣 Chamar Agora
     </button>
   </div>`;
+  document.getElementById('pageContent').innerHTML = html;
+  // Recarregar vozes ao abrir a página
+  if (elevenVoices.length === 0) {
+    fetchElevenVoices();
+  }
 }
 
 function renderConfig() {
@@ -849,8 +973,6 @@ function openModal(id=null) {
   document.getElementById('spotInstrumental').value = '';
   document.getElementById('spotVoice').value = elevenVoices[0]?.voice_id || '';
   document.getElementById('introDuration').value = '5';
-  document.getElementById('scheduleActive').checked = false;
-  document.getElementById('scheduleOptions').style.display = 'none';
   document.getElementById('ttsUploadArea').innerHTML = '<div class="upload-icon">🎙️</div><div class="upload-text">Clique para selecionar</div><div class="upload-sub">Arquivo MP3 gerado no ElevenLabs</div>';
   document.getElementById('ttsUploadArea').classList.remove('upload-done');
   document.getElementById('instrumentalUploadArea').innerHTML = '<div class="upload-icon">🎸</div><div class="upload-text">Clique para selecionar</div><div class="upload-sub">Arquivo MP3 personalizado</div>';
@@ -870,15 +992,7 @@ function openModal(id=null) {
       document.getElementById('spotInstrumental').value = spot.instrumental || '';
       if (voiceSel.querySelector(`option[value="${spot.voice}"]`)) voiceSel.value = spot.voice;
       document.getElementById('introDuration').value = spot.introDuration || '5';
-      if (spot.scheduleActive) {
-        document.getElementById('scheduleActive').checked = true;
-        document.getElementById('scheduleOptions').style.display = 'block';
-        document.getElementById('scheduleTime').value = spot.scheduledTime || '';
-        (spot.scheduledDays || []).forEach(d => {
-          const cb = document.getElementById('day_' + d);
-          if (cb) cb.checked = true;
-        });
-      }
+
       if (spot.ttsData) {
         document.getElementById('ttsUploadArea').innerHTML = '<div class="upload-icon">✅</div><div class="upload-text" style="color:var(--green)">Áudio carregado</div><div class="upload-sub">Clique para substituir</div>';
         document.getElementById('ttsUploadArea').classList.add('upload-done');
@@ -891,9 +1005,6 @@ function openModal(id=null) {
   document.getElementById('spotInstrumental').onchange = function() {
     document.getElementById('customInstrumentalUpload').style.display = this.value === 'custom' ? 'block' : 'none';
     checkMixerReady();
-  };
-  document.getElementById('scheduleActive').onchange = function() {
-    document.getElementById('scheduleOptions').style.display = this.checked ? 'block' : 'none';
   };
 }
 
@@ -939,16 +1050,13 @@ function saveSpot() {
   const instrumental = document.getElementById('spotInstrumental').value;
   const voice = document.getElementById('spotVoice').value;
   const introDuration = document.getElementById('introDuration').value;
-  const scheduleActive = document.getElementById('scheduleActive').checked;
-  const scheduledTime = document.getElementById('scheduleTime')?.value || '';
-  const scheduledDays = scheduleActive ? Array.from(document.querySelectorAll('.day-cb:checked')).map(cb => parseInt(cb.value)) : [];
 
   if (editingSpotId) {
     const idx = spots.findIndex(s=>s.id===editingSpotId);
-    if (idx !== -1) spots[idx] = { ...spots[idx], name, instrumental, voice, introDuration, ttsData: ttsBlob, instrumentalData: instrumentalBlob, scheduleActive, scheduledTime, scheduledDays };
+    if (idx !== -1) spots[idx] = { ...spots[idx], name, instrumental, voice, introDuration, ttsData: ttsBlob, instrumentalData: instrumentalBlob };
     showToast('✅ Spot atualizado!', 'success');
   } else {
-    spots.push({ id: Date.now().toString(), name, instrumental, voice, introDuration, ttsData: ttsBlob, instrumentalData: instrumentalBlob, active: true, playCount: 0, scheduleActive, scheduledTime, scheduledDays, createdAt: new Date().toLocaleDateString('pt-BR') });
+    spots.push({ id: Date.now().toString(), name, instrumental, voice, introDuration, ttsData: ttsBlob, instrumentalData: instrumentalBlob, active: true, playCount: 0, schedule: {}, createdAt: new Date().toLocaleDateString('pt-BR') });
     showToast('✅ Spot criado!', 'success');
   }
   saveSpots(); closeModal(); showPage('spots');
@@ -967,6 +1075,12 @@ function toggleSpot(id) {
 
 function saveSpots() { localStorage.setItem('ij_spots', JSON.stringify(spots)); }
 function saveSettings() { localStorage.setItem('ij_settings', JSON.stringify(settings)); document.getElementById('spotInterval').textContent = settings.interval; }
+
+async function reloadVoices() {
+  showToast('🔄 Carregando vozes...', '');
+  await fetchElevenVoices();
+  if (elevenVoices.length > 0) showToast('✅ ' + elevenVoices.length + ' vozes carregadas!', 'success');
+}
 
 // ── RECEPÇÃO ──────────────────────────────────────────────────────────────────
 let recType = 'Aluno';
