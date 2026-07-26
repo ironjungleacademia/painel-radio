@@ -298,11 +298,30 @@ select option{background:var(--dark2)}
       <option value="4">4 segundos</option>
       <option value="5" selected>5 segundos</option>
     </select>
-    <label class="label">Voz utilizada</label>
-    <select id="spotVoice" style="margin-bottom:20px">
-      <option value="feminina">🎙 Voz Feminina (Vitória)</option>
-      <option value="masculina">🎙 Voz Masculina (Beto)</option>
+    <label class="label">Voz (ElevenLabs)</label>
+    <select id="spotVoice" style="margin-bottom:14px">
+      <option value="">Carregando vozes...</option>
     </select>
+
+    <!-- AGENDAMENTO -->
+    <div class="sep"></div>
+    <div class="section-title">⏰ Agendamento</div>
+    <div class="toggle-row" style="margin-bottom:12px">
+      <input type="checkbox" id="scheduleActive" style="width:auto;padding:0">
+      <span class="toggle-label">Agendar este spot em horário fixo</span>
+    </div>
+    <div id="scheduleOptions" style="display:none;background:var(--dark3);border-radius:10px;padding:14px;margin-bottom:14px">
+      <label class="label">Horário</label>
+      <input type="time" id="scheduleTime" style="margin-bottom:12px;max-width:160px">
+      <label class="label">Dias da Semana</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].map((d,i)=>`
+        <label style="display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer">
+          <input type="checkbox" class="day-cb" id="day_${i}" value="${i}" style="width:auto;padding:0">
+          <span style="font-size:12px;font-weight:700">${d}</span>
+        </label>`).join('')}
+      </div>
+    </div>
 
     <!-- MIXER PREVIEW -->
     <div id="mixerSection" style="display:none">
@@ -357,27 +376,56 @@ select option{background:var(--dark2)}
 const CLIENT_ID = 'b631bc37b95d473b8cf42f29c98ff818';
 const REDIRECT_URI = 'https://ironjungleacademia.github.io/painel-radio';
 const SCOPES = 'user-read-playback-state user-modify-playback-state user-read-currently-playing';
+const ELEVEN_API_KEY = 'sk_81e1fecde27aa738245bc3e615f515bc8b4c0fcf266105fa';
+const ROCK_SAMPLE_URL = 'https://cdn.jsdelivr.net/gh/ironjunglecontato/iron-jungle-radio@main/rock-intro.mp3';
+const DIAS_SEMANA = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 
 // ── STATE ────────────────────────────────────────────────────────────────────
 let accessToken = null;
 let spots = JSON.parse(localStorage.getItem('ij_spots') || '[]');
-let settings = JSON.parse(localStorage.getItem('ij_settings') || '{"interval":3,"volume":"Normal","dislikeLimit":10,"dislikeActive":true}');
+let settings = JSON.parse(localStorage.getItem('ij_settings') || '{"interval":3,"volume":"Normal"}');
+let elevenVoices = [];
 let songCount = 0;
 let currentPage = 'dashboard';
 let isSpotPlaying = false;
-let currentSpotAudio = null;
 let spotifyPolling = null;
+let schedulerInterval = null;
 let lastTrackId = null;
 let isPlaying = true;
-
-// Mixer state
 let mixCtx = null;
-let mixMusicEl = null;
-let mixTtsEl = null;
 let mixPlaying = false;
 let ttsBlob = null;
 let instrumentalBlob = null;
 let editingSpotId = null;
+
+// ── ELEVENLABS ───────────────────────────────────────────────────────────────
+async function fetchElevenVoices() {
+  try {
+    const res = await fetch('https://api.elevenlabs.io/v1/voices', {
+      headers: { 'xi-api-key': ELEVEN_API_KEY }
+    });
+    const data = await res.json();
+    elevenVoices = data.voices || [];
+    return elevenVoices;
+  } catch(e) { return []; }
+}
+
+async function generateTTS(text, voiceId) {
+  try {
+    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: 'POST',
+      headers: { 'xi-api-key': ELEVEN_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text,
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+      })
+    });
+    if (!res.ok) throw new Error('Erro ElevenLabs: ' + res.status);
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  } catch(e) { showToast('❌ Erro ElevenLabs: ' + e.message, 'error'); return null; }
+}
 
 // ── AUTH PKCE ────────────────────────────────────────────────────────────────
 function generateRandomString(length) {
@@ -400,13 +448,9 @@ async function loginSpotify() {
   const challenge = await generateCodeChallenge(verifier);
   localStorage.setItem('ij_verifier', verifier);
   const params = new URLSearchParams({
-    client_id: CLIENT_ID,
-    response_type: 'code',
-    redirect_uri: REDIRECT_URI,
-    scope: SCOPES,
-    code_challenge_method: 'S256',
-    code_challenge: challenge,
-    show_dialog: true
+    client_id: CLIENT_ID, response_type: 'code',
+    redirect_uri: REDIRECT_URI, scope: SCOPES,
+    code_challenge_method: 'S256', code_challenge: challenge, show_dialog: true
   });
   window.location.href = 'https://accounts.spotify.com/authorize?' + params;
 }
@@ -414,16 +458,11 @@ async function loginSpotify() {
 async function exchangeCode(code) {
   const verifier = localStorage.getItem('ij_verifier');
   const body = new URLSearchParams({
-    client_id: CLIENT_ID,
-    grant_type: 'authorization_code',
-    code,
-    redirect_uri: REDIRECT_URI,
-    code_verifier: verifier
+    client_id: CLIENT_ID, grant_type: 'authorization_code',
+    code, redirect_uri: REDIRECT_URI, code_verifier: verifier
   });
   const res = await fetch('https://accounts.spotify.com/api/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body
   });
   const data = await res.json();
   if (data.access_token) {
@@ -440,14 +479,10 @@ async function refreshToken() {
   const refresh = localStorage.getItem('ij_refresh');
   if (!refresh) return false;
   const body = new URLSearchParams({
-    client_id: CLIENT_ID,
-    grant_type: 'refresh_token',
-    refresh_token: refresh
+    client_id: CLIENT_ID, grant_type: 'refresh_token', refresh_token: refresh
   });
   const res = await fetch('https://accounts.spotify.com/api/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body
   });
   const data = await res.json();
   if (data.access_token) {
@@ -459,7 +494,6 @@ async function refreshToken() {
 }
 
 async function checkAuth() {
-  // Check URL for code (after Spotify redirect)
   const urlParams = new URLSearchParams(window.location.search);
   const code = urlParams.get('code');
   if (code) {
@@ -468,18 +502,16 @@ async function checkAuth() {
     if (!ok) { showToast('❌ Erro ao autenticar com Spotify', 'error'); return; }
   } else {
     accessToken = localStorage.getItem('ij_token');
-    if (!accessToken) {
-      // Try refresh
-      const refreshed = await refreshToken();
-      if (!refreshed) return;
-    }
+    if (!accessToken) { const r = await refreshToken(); if (!r) return; }
   }
   if (accessToken) {
     document.getElementById('authScreen').style.display = 'none';
     document.getElementById('appLayout').style.display = 'flex';
     showPage('dashboard');
     startPolling();
+    startScheduler();
     fetchCurrentTrack();
+    fetchElevenVoices();
   }
 }
 
@@ -487,6 +519,7 @@ function logout() {
   localStorage.removeItem('ij_token');
   accessToken = null;
   stopPolling();
+  stopScheduler();
   document.getElementById('authScreen').style.display = 'flex';
   document.getElementById('appLayout').style.display = 'none';
 }
@@ -497,12 +530,7 @@ async function spotifyFetch(endpoint, method='GET', body=null) {
     const opts = { method, headers: { 'Authorization': 'Bearer ' + accessToken } };
     if (body) { opts.body = JSON.stringify(body); opts.headers['Content-Type'] = 'application/json'; }
     const res = await fetch('https://api.spotify.com/v1' + endpoint, opts);
-    if (res.status === 401) {
-      // Try refresh before logout
-      const refreshed = await refreshToken();
-      if (refreshed) return spotifyFetch(endpoint, method, body);
-      logout(); return null;
-    }
+    if (res.status === 401) { const r = await refreshToken(); if (r) return spotifyFetch(endpoint, method, body); logout(); return null; }
     if (res.status === 204 || res.status === 202) return {};
     if (!res.ok) return null;
     return await res.json();
@@ -520,9 +548,8 @@ async function fetchCurrentTrack() {
     return;
   }
   const track = data.item;
-  const playing = data.is_playing;
-  isPlaying = playing;
-  document.getElementById('playPauseBtn').textContent = playing ? '⏸' : '▶';
+  isPlaying = data.is_playing;
+  document.getElementById('playPauseBtn').textContent = isPlaying ? '⏸' : '▶';
   document.getElementById('npTitle').textContent = track.name;
   document.getElementById('npArtist').textContent = track.artists.map(a=>a.name).join(', ');
   const pct = data.progress_ms / track.duration_ms * 100;
@@ -530,8 +557,7 @@ async function fetchCurrentTrack() {
   if (track.album?.images?.[0]) {
     document.getElementById('npCover').innerHTML = `<img src="${track.album.images[0].url}" style="width:100%;height:100%;border-radius:8px;object-fit:cover">`;
   }
-  // Detect track change
-  if (track.id !== lastTrackId && lastTrackId !== null && playing) {
+  if (track.id !== lastTrackId && lastTrackId !== null && isPlaying) {
     songCount++;
     document.getElementById('songCounter').textContent = songCount;
     if (songCount >= parseInt(settings.interval)) {
@@ -541,51 +567,52 @@ async function fetchCurrentTrack() {
     }
   }
   lastTrackId = track.id;
-  // Update spotify user
   if (!document.getElementById('spotifyUser').dataset.loaded) {
     const user = await spotifyFetch('/me');
-    if (user) {
-      document.getElementById('spotifyUser').textContent = '🟢 ' + (user.display_name || user.id);
-      document.getElementById('spotifyUser').dataset.loaded = '1';
-    }
+    if (user) { document.getElementById('spotifyUser').textContent = '🟢 ' + (user.display_name || user.id); document.getElementById('spotifyUser').dataset.loaded = '1'; }
   }
 }
 
 async function togglePlayPause() {
-  if (isPlaying) {
-    await spotifyFetch('/me/player/pause', 'PUT');
-    isPlaying = false;
-    document.getElementById('playPauseBtn').textContent = '▶';
-  } else {
-    await spotifyFetch('/me/player/play', 'PUT');
-    isPlaying = true;
-    document.getElementById('playPauseBtn').textContent = '⏸';
-  }
+  if (isPlaying) { await spotifyFetch('/me/player/pause','PUT'); isPlaying=false; document.getElementById('playPauseBtn').textContent='▶'; }
+  else { await spotifyFetch('/me/player/play','PUT'); isPlaying=true; document.getElementById('playPauseBtn').textContent='⏸'; }
 }
+async function spotifyNext() { await spotifyFetch('/me/player/next','POST'); setTimeout(fetchCurrentTrack,800); }
+async function spotifyPrev() { await spotifyFetch('/me/player/previous','POST'); setTimeout(fetchCurrentTrack,800); }
+async function spotifyPause() { await spotifyFetch('/me/player/pause','PUT'); }
+async function spotifyPlay()  { await spotifyFetch('/me/player/play','PUT'); }
 
-async function spotifyNext() {
-  await spotifyFetch('/me/player/next', 'POST');
-  setTimeout(fetchCurrentTrack, 800);
+function startPolling() { spotifyPolling = setInterval(fetchCurrentTrack, 3000); }
+function stopPolling()  { if (spotifyPolling) clearInterval(spotifyPolling); }
+
+// ── SCHEDULER ─────────────────────────────────────────────────────────────────
+function startScheduler() {
+  schedulerInterval = setInterval(checkScheduledSpots, 30000);
 }
+function stopScheduler() { if (schedulerInterval) clearInterval(schedulerInterval); }
 
-async function spotifyPrev() {
-  await spotifyFetch('/me/player/previous', 'POST');
-  setTimeout(fetchCurrentTrack, 800);
-}
-
-async function spotifyPause() { await spotifyFetch('/me/player/pause', 'PUT'); }
-async function spotifyPlay()  { await spotifyFetch('/me/player/play', 'PUT'); }
-
-function startPolling() {
-  spotifyPolling = setInterval(fetchCurrentTrack, 3000);
-}
-function stopPolling() {
-  if (spotifyPolling) clearInterval(spotifyPolling);
+function checkScheduledSpots() {
+  const now = new Date();
+  const currentDay = now.getDay(); // 0=Dom, 6=Sab
+  const currentTime = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+  spots.forEach(spot => {
+    if (!spot.scheduleActive || isSpotPlaying) return;
+    if (!spot.scheduledDays || !spot.scheduledDays.includes(currentDay)) return;
+    if (spot.scheduledTime !== currentTime) return;
+    // Avoid playing twice in same minute
+    const lastPlayed = spot.lastScheduledPlay || '';
+    const nowKey = now.toDateString() + currentTime;
+    if (lastPlayed === nowKey) return;
+    spot.lastScheduledPlay = nowKey;
+    saveSpots();
+    showToast('⏰ Spot agendado: ' + spot.name, 'success');
+    playSpotById(spot.id, true);
+  });
 }
 
 // ── AUTO SPOT ─────────────────────────────────────────────────────────────────
 async function triggerAutoSpot() {
-  const activeSpots = spots.filter(s => s.active);
+  const activeSpots = spots.filter(s => s.active && !s.scheduleActive);
   if (activeSpots.length === 0) return;
   const spot = activeSpots[Math.floor(Math.random() * activeSpots.length)];
   showToast('🎙️ Tocando spot: ' + spot.name, 'success');
@@ -594,20 +621,19 @@ async function triggerAutoSpot() {
 
 async function playSpotById(id, auto=false) {
   const spot = spots.find(s => s.id === id);
-  if (!spot) return;
-  if (isSpotPlaying) return;
+  if (!spot || isSpotPlaying) return;
   isSpotPlaying = true;
-  // Pause Spotify
+  spot.playCount = (spot.playCount || 0) + 1;
+  saveSpots();
   await spotifyPause();
   showToast('⏸ Spotify pausado — tocando spot', 'success');
-  // Play spot audio
   await playSpotAudio(spot);
-  // Resume Spotify
   await spotifyPlay();
   isPlaying = true;
   document.getElementById('playPauseBtn').textContent = '⏸';
   showToast('▶ Spotify retomado', 'success');
   isSpotPlaying = false;
+  if (currentPage === 'dashboard' || currentPage === 'spots') showPage(currentPage);
 }
 
 async function playSpotAudio(spot) {
@@ -616,50 +642,52 @@ async function playSpotAudio(spot) {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       const ttsEl = new Audio(spot.ttsData);
-      ttsEl.crossOrigin = 'anonymous';
       const ttsSrc = ctx.createMediaElementSource(ttsEl);
       const ttsGain = ctx.createGain();
       ttsSrc.connect(ttsGain); ttsGain.connect(ctx.destination);
       ttsGain.gain.value = 1;
-
       let musicEl = null, musicGain = null;
-      if (spot.instrumentalData) {
-        musicEl = new Audio(spot.instrumentalData);
+
+      // Usar sample hospedado ou upload personalizado
+      const instrumentalUrl = spot.instrumentalData || getSampleUrl(spot.instrumental);
+      if (instrumentalUrl) {
+        musicEl = new Audio(instrumentalUrl);
         musicEl.crossOrigin = 'anonymous';
         musicEl.loop = true;
         const musicSrc = ctx.createMediaElementSource(musicEl);
         musicGain = ctx.createGain();
         musicSrc.connect(musicGain); musicGain.connect(ctx.destination);
-        musicGain.gain.value = 0;
-      }
-
-      const introDur = parseInt(spot.introDuration || 5) * 1000;
-
-      if (musicEl) {
         musicGain.gain.value = 0.85;
         musicEl.play();
+      }
+      const introDur = parseInt(spot.introDuration || 5) * 1000;
+      if (musicEl) {
         await wait(introDur);
-        // Fade out music
-        const fadeStart = ctx.currentTime;
-        musicGain.gain.linearRampToValueAtTime(0.08, fadeStart + 1.5);
+        musicGain.gain.linearRampToValueAtTime(0.08, ctx.currentTime + 1.5);
         await wait(1500);
       }
-
-      // Play TTS
       ttsEl.play();
       await new Promise(r => { ttsEl.onended = r; setTimeout(r, 30000); });
-
-      if (musicEl) {
-        const fi = ctx.currentTime;
-        musicGain.gain.linearRampToValueAtTime(0.7, fi + 1);
-        musicGain.gain.linearRampToValueAtTime(0, fi + 2);
+      if (musicEl && musicGain) {
+        musicGain.gain.linearRampToValueAtTime(0.7, ctx.currentTime + 1);
+        musicGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 2);
         await wait(2000);
         musicEl.pause();
       }
-      ctx.close();
-      resolve();
+      ctx.close(); resolve();
     } catch(e) { await wait(3000); resolve(); }
   });
+}
+
+function getSampleUrl(genre) {
+  const samples = {
+    rock: ROCK_SAMPLE_URL,
+    metal: ROCK_SAMPLE_URL,
+    dance: ROCK_SAMPLE_URL, // Substitua quando tiver samples de outros gêneros
+    pop: ROCK_SAMPLE_URL,
+    hiphop: ROCK_SAMPLE_URL,
+  };
+  return samples[genre] || null;
 }
 
 // ── PAGES ─────────────────────────────────────────────────────────────────────
@@ -669,7 +697,6 @@ function showPage(page) {
   const nav = document.getElementById('nav-' + page);
   if (nav) nav.classList.add('active');
   const content = document.getElementById('pageContent');
-
   if (page === 'dashboard') content.innerHTML = renderDashboard();
   else if (page === 'spots') content.innerHTML = renderSpots();
   else if (page === 'criar') { openModal(); return; }
@@ -681,6 +708,7 @@ function renderDashboard() {
   const total = spots.length;
   const ativos = spots.filter(s=>s.active).length;
   const tocados = spots.reduce((a,s)=>a+(s.playCount||0),0);
+  const agendados = spots.filter(s=>s.scheduleActive).length;
   return `
   <div class="page-title">Dashboard</div>
   <div class="page-sub">Painel de controle — Iron Jungle Gym</div>
@@ -689,10 +717,17 @@ function renderDashboard() {
     <div class="stat-card green"><div class="stat-icon-bg">✅</div><div class="stat-label">Spots Ativos</div><div class="stat-value" style="color:var(--green)">${ativos}</div></div>
     <div class="stat-card red"><div class="stat-icon-bg">▶</div><div class="stat-label">Spots Tocados</div><div class="stat-value" style="color:var(--red)">${tocados}</div></div>
   </div>
-  <div class="card card-gold" style="margin-bottom:16px">
-    <div class="section-title">📣 Chamada Rápida à Recepção</div>
-    <div style="font-size:14px;color:var(--text-dim);margin-bottom:14px">Toca imediatamente, pausando o Spotify.</div>
-    <button class="btn btn-gold btn-full" onclick="showPage('recepcao')">📣 Chamar Aluno ou Professor</button>
+  <div class="grid-2" style="margin-bottom:16px">
+    <div class="card card-gold">
+      <div class="section-title">📣 Chamada à Recepção</div>
+      <div style="font-size:14px;color:var(--text-dim);margin-bottom:14px">Toca imediatamente via ElevenLabs, pausando o Spotify.</div>
+      <button class="btn btn-gold btn-full" onclick="showPage('recepcao')">📣 Chamar Aluno ou Professor</button>
+    </div>
+    <div class="card">
+      <div class="section-title">⏰ Spots Agendados</div>
+      <div style="font-size:14px;color:var(--text-dim);margin-bottom:14px">${agendados} spot(s) com agendamento ativo.</div>
+      <button class="btn btn-outline btn-full" onclick="showPage('spots')">Ver todos os spots</button>
+    </div>
   </div>
   <div class="card">
     <div class="flex-between" style="margin-bottom:14px">
@@ -711,25 +746,26 @@ function renderSpots() {
     <button class="btn btn-gold" onclick="openModal()">➕ Criar Spot</button>
   </div>
   <div class="page-sub">${spots.length} spot(s) cadastrado(s)</div>
+  <div class="card" style="margin-bottom:16px">
+    <label class="label">Intervalo entre Spots (reprodução automática)</label>
+    <select onchange="settings.interval=this.value;document.getElementById('spotInterval').textContent=this.value;saveSettings()" style="max-width:260px">
+      ${[1,2,3,4,5,6,8,10].map(n=>`<option value="${n}" ${settings.interval==n?'selected':''}>A cada ${n} música${n>1?'s':''}</option>`).join('')}
+    </select>
+  </div>
   <div class="card">
-    <div style="margin-bottom:12px">
-      <label class="label">Intervalo entre Spots</label>
-      <select onchange="settings.interval=this.value;document.getElementById('spotInterval').textContent=this.value;saveSettings()" style="max-width:260px">
-        ${[1,2,3,4,5,6,8,10].map(n=>`<option value="${n}" ${settings.interval==n?'selected':''}>A cada ${n} música${n>1?'s':''}</option>`).join('')}
-      </select>
-    </div>
     ${spots.length === 0 ? '<div style="text-align:center;padding:40px;color:var(--text-dim)">📭 Nenhum spot criado.<br><br><button class="btn btn-gold btn-sm" onclick="openModal()">+ Criar primeiro spot</button></div>' :
       spots.map(s => renderSpotItem(s, true)).join('')}
   </div>`;
 }
 
 function renderSpotItem(spot, showEdit=false) {
-  const icons = {rock:'🎸',dance:'🎹',pop:'🎵',hiphop:'🎤','':'🎙️',custom:'📁'};
+  const icons = {rock:'🎸',metal:'🎸',dance:'🎹',pop:'🎵',hiphop:'🎤','':'🎙️',custom:'📁'};
   const icon = icons[spot.instrumental] || '🎙️';
+  const agendado = spot.scheduleActive ? `<span class="badge badge-blue">⏰ ${DIAS_SEMANA[spot.scheduledDays?.[0]||0]} ${spot.scheduledTime||''}</span>` : '';
   return `<div class="spot-item ${spot.active?'active-spot':''}" id="spotItem${spot.id}">
     <div class="spot-cover">${icon}</div>
     <div class="spot-info">
-      <div class="spot-name">${spot.name}</div>
+      <div class="spot-name">${spot.name} ${agendado}</div>
       <div class="spot-meta">${spot.voice==='feminina'?'🎙 Feminina':'🎙 Masculina'} · Intro ${spot.introDuration||5}s · Tocado ${spot.playCount||0}x</div>
     </div>
     <div class="spot-actions">
@@ -742,9 +778,12 @@ function renderSpotItem(spot, showEdit=false) {
 }
 
 function renderRecepcao() {
+  const voiceOptions = elevenVoices.length > 0
+    ? elevenVoices.map(v=>`<option value="${v.voice_id}">${v.name}</option>`).join('')
+    : '<option value="">Carregando vozes...</option>';
   return `
   <div class="page-title">📣 Chamada à Recepção</div>
-  <div class="page-sub">Toca imediatamente, pausando o Spotify automaticamente.</div>
+  <div class="page-sub">Toca imediatamente via ElevenLabs, pausando o Spotify.</div>
   <div class="card card-gold">
     <div class="section-title">Quem está sendo chamado?</div>
     <div class="person-type-btns">
@@ -753,15 +792,17 @@ function renderRecepcao() {
     </div>
     <label class="label">Nome</label>
     <input id="recNome" placeholder="Digite o nome..." oninput="updatePreview()" style="margin-bottom:14px">
-    <label class="label">Voz</label>
-    <select id="recVoz" style="margin-bottom:14px">
-      <option value="feminina">🎙 Voz Feminina (Vitória)</option>
-      <option value="masculina">🎙 Voz Masculina (Beto)</option>
+    <label class="label">Voz (ElevenLabs)</label>
+    <select id="recVoz" style="margin-bottom:14px">${voiceOptions}</select>
+    <label class="label">Trilha Instrumental</label>
+    <select id="recInstrumental" style="margin-bottom:14px">
+      <option value="">Sem trilha</option>
+      <option value="rock" selected>🎸 Rock (Electronic Stylish Rock)</option>
     </select>
     <div class="preview-text" id="recPreview">
       Atenção! O aluno [nome] está sendo solicitado(a) a comparecer à recepção. Obrigado!
     </div>
-    <button class="btn btn-gold btn-full" onclick="fireRecepcao()" style="margin-top:4px">
+    <button class="btn btn-gold btn-full" id="recBtn" onclick="fireRecepcao()" style="margin-top:4px">
       📣 Chamar Agora
     </button>
   </div>`;
@@ -774,7 +815,7 @@ function renderConfig() {
   <div class="grid-2">
     <div>
       <div class="card" style="margin-bottom:16px">
-        <div class="section-title">Reprodução</div>
+        <div class="section-title">Reprodução Automática</div>
         <label class="label">Intervalo entre Spots</label>
         <select style="margin-bottom:14px" onchange="settings.interval=this.value;document.getElementById('spotInterval').textContent=this.value;saveSettings()">
           ${[1,2,3,4,5,6,8,10].map(n=>`<option value="${n}" ${settings.interval==n?'selected':''}>A cada ${n} música${n>1?'s':''}</option>`).join('')}
@@ -788,17 +829,9 @@ function renderConfig() {
     <div>
       <div class="card">
         <div class="section-title">Spotify</div>
-        <div style="font-size:14px;color:var(--text-dim);margin-bottom:16px;line-height:1.6">
-          O Spotify é pausado automaticamente quando um spot é reproduzido e retoma logo após o término.
-        </div>
-        <div class="toggle-row">
-          <div class="toggle on"></div>
-          <span class="toggle-label">Pausar Spotify durante spots</span>
-        </div>
-        <div class="toggle-row">
-          <div class="toggle on"></div>
-          <span class="toggle-label">Retomar após spot</span>
-        </div>
+        <div style="font-size:14px;color:var(--text-dim);margin-bottom:16px;line-height:1.6">O Spotify é pausado automaticamente quando um spot é reproduzido e retoma logo após o término.</div>
+        <div class="toggle-row"><div class="toggle on"></div><span class="toggle-label">Pausar durante spots</span></div>
+        <div class="toggle-row"><div class="toggle on"></div><span class="toggle-label">Retomar após spot</span></div>
       </div>
     </div>
   </div>
@@ -814,34 +847,53 @@ function openModal(id=null) {
   document.getElementById('modalTitleText').textContent = id ? 'EDITAR SPOT' : 'CRIAR SPOT';
   document.getElementById('spotNameInput').value = '';
   document.getElementById('spotInstrumental').value = '';
-  document.getElementById('spotVoice').value = 'feminina';
+  document.getElementById('spotVoice').value = elevenVoices[0]?.voice_id || '';
   document.getElementById('introDuration').value = '5';
+  document.getElementById('scheduleActive').checked = false;
+  document.getElementById('scheduleOptions').style.display = 'none';
   document.getElementById('ttsUploadArea').innerHTML = '<div class="upload-icon">🎙️</div><div class="upload-text">Clique para selecionar</div><div class="upload-sub">Arquivo MP3 gerado no ElevenLabs</div>';
-  document.getElementById('instrumentalUploadArea').innerHTML = '<div class="upload-icon">🎸</div><div class="upload-text">Clique para selecionar</div><div class="upload-sub">Arquivo MP3 da trilha instrumental</div>';
+  document.getElementById('ttsUploadArea').classList.remove('upload-done');
+  document.getElementById('instrumentalUploadArea').innerHTML = '<div class="upload-icon">🎸</div><div class="upload-text">Clique para selecionar</div><div class="upload-sub">Arquivo MP3 personalizado</div>';
   document.getElementById('customInstrumentalUpload').style.display = 'none';
   document.getElementById('mixerSection').style.display = 'none';
+
+  // Populate voice select
+  const voiceSel = document.getElementById('spotVoice');
+  voiceSel.innerHTML = elevenVoices.length > 0
+    ? elevenVoices.map(v=>`<option value="${v.voice_id}">${v.name}</option>`).join('')
+    : '<option value="">Carregando vozes...</option>';
 
   if (id) {
     const spot = spots.find(s=>s.id===id);
     if (spot) {
       document.getElementById('spotNameInput').value = spot.name;
       document.getElementById('spotInstrumental').value = spot.instrumental || '';
-      document.getElementById('spotVoice').value = spot.voice || 'feminina';
+      if (voiceSel.querySelector(`option[value="${spot.voice}"]`)) voiceSel.value = spot.voice;
       document.getElementById('introDuration').value = spot.introDuration || '5';
+      if (spot.scheduleActive) {
+        document.getElementById('scheduleActive').checked = true;
+        document.getElementById('scheduleOptions').style.display = 'block';
+        document.getElementById('scheduleTime').value = spot.scheduledTime || '';
+        (spot.scheduledDays || []).forEach(d => {
+          const cb = document.getElementById('day_' + d);
+          if (cb) cb.checked = true;
+        });
+      }
       if (spot.ttsData) {
         document.getElementById('ttsUploadArea').innerHTML = '<div class="upload-icon">✅</div><div class="upload-text" style="color:var(--green)">Áudio carregado</div><div class="upload-sub">Clique para substituir</div>';
         document.getElementById('ttsUploadArea').classList.add('upload-done');
         ttsBlob = spot.ttsData;
       }
-      if (spot.instrumentalData) {
-        instrumentalBlob = spot.instrumentalData;
-      }
+      if (spot.instrumentalData) instrumentalBlob = spot.instrumentalData;
     }
   }
   document.getElementById('modalCriar').style.display = 'flex';
   document.getElementById('spotInstrumental').onchange = function() {
     document.getElementById('customInstrumentalUpload').style.display = this.value === 'custom' ? 'block' : 'none';
     checkMixerReady();
+  };
+  document.getElementById('scheduleActive').onchange = function() {
+    document.getElementById('scheduleOptions').style.display = this.checked ? 'block' : 'none';
   };
 }
 
@@ -854,8 +906,7 @@ function closeModal() {
 }
 
 function handleTtsUpload(input) {
-  const file = input.files[0];
-  if (!file) return;
+  const file = input.files[0]; if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
     ttsBlob = e.target.result;
@@ -867,54 +918,46 @@ function handleTtsUpload(input) {
 }
 
 function handleInstrumentalUpload(input) {
-  const file = input.files[0];
-  if (!file) return;
+  const file = input.files[0]; if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
     instrumentalBlob = e.target.result;
     document.getElementById('instrumentalUploadArea').innerHTML = `<div class="upload-icon">✅</div><div class="upload-text" style="color:var(--green)">${file.name}</div><div class="upload-sub">Clique para substituir</div>`;
     document.getElementById('instrumentalUploadArea').classList.add('upload-done');
-    checkMixerReady();
   };
   reader.readAsDataURL(file);
 }
 
 function checkMixerReady() {
-  if (ttsBlob) {
-    document.getElementById('mixerSection').style.display = 'block';
-  }
+  if (ttsBlob) document.getElementById('mixerSection').style.display = 'block';
 }
 
 function saveSpot() {
   const name = document.getElementById('spotNameInput').value.trim();
   if (!name) { showToast('⚠️ Digite o nome do spot!', 'error'); return; }
   if (!ttsBlob) { showToast('⚠️ Faça upload do áudio do locutor!', 'error'); return; }
-
   const instrumental = document.getElementById('spotInstrumental').value;
   const voice = document.getElementById('spotVoice').value;
   const introDuration = document.getElementById('introDuration').value;
+  const scheduleActive = document.getElementById('scheduleActive').checked;
+  const scheduledTime = document.getElementById('scheduleTime')?.value || '';
+  const scheduledDays = scheduleActive ? Array.from(document.querySelectorAll('.day-cb:checked')).map(cb => parseInt(cb.value)) : [];
 
   if (editingSpotId) {
     const idx = spots.findIndex(s=>s.id===editingSpotId);
-    if (idx !== -1) {
-      spots[idx] = { ...spots[idx], name, instrumental, voice, introDuration, ttsData: ttsBlob, instrumentalData: instrumentalBlob };
-    }
+    if (idx !== -1) spots[idx] = { ...spots[idx], name, instrumental, voice, introDuration, ttsData: ttsBlob, instrumentalData: instrumentalBlob, scheduleActive, scheduledTime, scheduledDays };
     showToast('✅ Spot atualizado!', 'success');
   } else {
-    spots.push({ id: Date.now().toString(), name, instrumental, voice, introDuration, ttsData: ttsBlob, instrumentalData: instrumentalBlob, active: true, playCount: 0, createdAt: new Date().toLocaleDateString('pt-BR') });
-    showToast('✅ Spot criado com sucesso!', 'success');
+    spots.push({ id: Date.now().toString(), name, instrumental, voice, introDuration, ttsData: ttsBlob, instrumentalData: instrumentalBlob, active: true, playCount: 0, scheduleActive, scheduledTime, scheduledDays, createdAt: new Date().toLocaleDateString('pt-BR') });
+    showToast('✅ Spot criado!', 'success');
   }
-  saveSpots();
-  closeModal();
-  showPage('spots');
+  saveSpots(); closeModal(); showPage('spots');
 }
 
 function deleteSpot(id) {
   if (!confirm('Remover este spot?')) return;
   spots = spots.filter(s=>s.id!==id);
-  saveSpots();
-  showPage('spots');
-  showToast('🗑 Spot removido', 'error');
+  saveSpots(); showPage('spots'); showToast('🗑 Spot removido', 'error');
 }
 
 function toggleSpot(id) {
@@ -939,19 +982,64 @@ function updatePreview() {
   const el = document.getElementById('recPreview');
   if (el) el.textContent = text;
 }
+
 async function fireRecepcao() {
   const nome = document.getElementById('recNome')?.value?.trim();
   if (!nome) { showToast('⚠️ Digite o nome da pessoa!', 'error'); return; }
-  showToast(`📣 Chamando ${recType} ${nome} à recepção!`, 'success');
+  const voiceId = document.getElementById('recVoz')?.value;
+  if (!voiceId) { showToast('⚠️ Selecione uma voz!', 'error'); return; }
+  const instrumental = document.getElementById('recInstrumental')?.value;
+  const text = `Atenção! O ${recType.toLowerCase()} ${nome} está sendo solicitado a comparecer à recepção. Obrigado!`;
+
+  const btn = document.getElementById('recBtn');
+  btn.disabled = true; btn.textContent = '⏳ Gerando áudio...';
+  showToast('🎙️ Gerando voz no ElevenLabs...', 'success');
+
+  const audioUrl = await generateTTS(text, voiceId);
+  if (!audioUrl) { btn.disabled=false; btn.textContent='📣 Chamar Agora'; return; }
+
   await spotifyPause();
-  await wait(500);
-  // Simulate TTS (in production: call ElevenLabs API)
-  showToast('🎙️ Reproduzindo chamada...', 'success');
-  await wait(4000);
+  showToast('⏸ Spotify pausado — tocando chamada', 'success');
+  btn.textContent = '🔊 Tocando...';
+
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const ttsEl = new Audio(audioUrl);
+    const ttsSrc = ctx.createMediaElementSource(ttsEl);
+    const ttsGain = ctx.createGain();
+    ttsSrc.connect(ttsGain); ttsGain.connect(ctx.destination);
+    ttsGain.gain.value = 1;
+
+    let musicEl = null, musicGain = null;
+    const sampleUrl = getSampleUrl(instrumental);
+    if (sampleUrl) {
+      musicEl = new Audio(sampleUrl);
+      musicEl.crossOrigin = 'anonymous'; musicEl.loop = true;
+      const musicSrc = ctx.createMediaElementSource(musicEl);
+      musicGain = ctx.createGain();
+      musicSrc.connect(musicGain); musicGain.connect(ctx.destination);
+      musicGain.gain.value = 0.85; musicEl.play();
+      await wait(5000);
+      musicGain.gain.linearRampToValueAtTime(0.08, ctx.currentTime + 1.5);
+      await wait(1500);
+    }
+
+    ttsEl.play();
+    await new Promise(r => { ttsEl.onended = r; setTimeout(r, 30000); });
+
+    if (musicEl && musicGain) {
+      musicGain.gain.linearRampToValueAtTime(0.7, ctx.currentTime+1);
+      musicGain.gain.linearRampToValueAtTime(0, ctx.currentTime+2);
+      await wait(2000); musicEl.pause();
+    }
+    ctx.close();
+  } catch(e) { showToast('❌ Erro ao reproduzir: ' + e.message, 'error'); }
+
   await spotifyPlay();
   isPlaying = true;
   document.getElementById('playPauseBtn').textContent = '⏸';
   showToast('▶ Spotify retomado', 'success');
+  btn.disabled = false; btn.textContent = '📣 Chamar Agora';
 }
 
 // ── MIXER PREVIEW ─────────────────────────────────────────────────────────────
@@ -961,106 +1049,76 @@ async function previewMix() {
   document.getElementById('previewBtn').style.display = 'none';
   document.getElementById('stopPreviewBtn').style.display = 'inline-flex';
 
-  const setMix = (icon, text, sub) => {
-    document.getElementById('mixIcon').textContent = icon;
-    document.getElementById('mixText').textContent = text;
-    document.getElementById('mixSub').textContent = sub;
-  };
-  const setMeters = (m, t) => {
-    document.getElementById('mMusic').style.width = m + '%';
-    document.getElementById('mTts').style.width = t + '%';
-    document.getElementById('mMusicV').textContent = Math.round(m) + '%';
-    document.getElementById('mTtsV').textContent = Math.round(t) + '%';
-  };
-  const setTL = n => { for(let i=0;i<5;i++) document.getElementById('mt'+i)?.classList.toggle('on', i<=n); };
-  const animMeters = (getMv, getTv, ms) => new Promise(resolve => {
-    const start = Date.now();
-    const id = setInterval(() => {
-      if (!mixPlaying) { clearInterval(id); resolve(); return; }
-      const t = Math.min((Date.now()-start)/ms, 1);
-      setMeters(getMv(t), getTv(t));
-      if (t >= 1) { clearInterval(id); resolve(); }
-    }, 50);
+  const setMix = (i,t,s) => { document.getElementById('mixIcon').textContent=i; document.getElementById('mixText').textContent=t; document.getElementById('mixSub').textContent=s; };
+  const setMeters = (m,t) => { document.getElementById('mMusic').style.width=m+'%'; document.getElementById('mTts').style.width=t+'%'; document.getElementById('mMusicV').textContent=Math.round(m)+'%'; document.getElementById('mTtsV').textContent=Math.round(t)+'%'; };
+  const setTL = n => { for(let i=0;i<5;i++) document.getElementById('mt'+i)?.classList.toggle('on',i<=n); };
+  const animMeters = (getMv,getTv,ms) => new Promise(resolve => {
+    const start=Date.now();
+    const id=setInterval(()=>{ if(!mixPlaying){clearInterval(id);resolve();return;} const t=Math.min((Date.now()-start)/ms,1); setMeters(getMv(t),getTv(t)); if(t>=1){clearInterval(id);resolve();} },50);
   });
 
   try {
     mixCtx = new (window.AudioContext || window.webkitAudioContext)();
     const introDur = parseInt(document.getElementById('introDuration').value) * 1000;
-    let musicEl = null, musicGain = null;
+    const genre = document.getElementById('spotInstrumental').value;
+    const sampleUrl = instrumentalBlob || getSampleUrl(genre);
 
-    // Instrumental
-    const hasInstrumental = instrumentalBlob || document.getElementById('spotInstrumental').value !== '';
-    if (hasInstrumental && instrumentalBlob) {
-      musicEl = new Audio(instrumentalBlob);
-      musicEl.crossOrigin = 'anonymous';
-      musicEl.loop = true;
-      const musicSrc = mixCtx.createMediaElementSource(musicEl);
-      musicGain = mixCtx.createGain();
+    let musicEl=null, musicGain=null;
+    if (sampleUrl) {
+      musicEl = new Audio(sampleUrl);
+      musicEl.crossOrigin='anonymous'; musicEl.loop=true;
+      const musicSrc=mixCtx.createMediaElementSource(musicEl);
+      musicGain=mixCtx.createGain();
       musicSrc.connect(musicGain); musicGain.connect(mixCtx.destination);
     }
 
-    // TTS
     const ttsEl = new Audio(ttsBlob);
-    ttsEl.crossOrigin = 'anonymous';
-    const ttsSrc = mixCtx.createMediaElementSource(ttsEl);
-    const ttsGain = mixCtx.createGain();
+    const ttsSrc=mixCtx.createMediaElementSource(ttsEl);
+    const ttsGain=mixCtx.createGain();
     ttsSrc.connect(ttsGain); ttsGain.connect(mixCtx.destination);
-    ttsGain.gain.value = 0;
+    ttsGain.gain.value=0;
 
-    // INTRO
     setTL(0); setMix('🎸','Intro Instrumental','Tocando intro...');
-    if (musicEl && musicGain) { musicGain.gain.value = 0.85; musicEl.play(); }
-    await animMeters(()=>hasInstrumental?85:0, ()=>0, introDur);
-    if (!mixPlaying) return cleanup();
+    if(musicEl&&musicGain){musicGain.gain.value=0.85;musicEl.play();}
+    await animMeters(()=>sampleUrl?85:0,()=>0,introDur);
+    if(!mixPlaying) return cleanup();
 
-    // FADE OUT
     setTL(1); setMix('🔉','Fade Out...','Reduzindo instrumental...');
-    if (musicGain) musicGain.gain.linearRampToValueAtTime(0.08, mixCtx.currentTime+1.5);
-    await animMeters(t=>(0.85-0.77*t)*100, ()=>0, 1500);
-    if (!mixPlaying) return cleanup();
+    if(musicGain) musicGain.gain.linearRampToValueAtTime(0.08,mixCtx.currentTime+1.5);
+    await animMeters(t=>(0.85-0.77*t)*100,()=>0,1500);
+    if(!mixPlaying) return cleanup();
 
-    // TTS
     setTL(2); setMix('🎙️','Locutor falando...','ElevenLabs TTS');
-    ttsGain.gain.value = 1; ttsEl.play();
-    const ttsDur = (ttsEl.duration > 0 ? ttsEl.duration : 4) * 1000;
-    await animMeters(()=>hasInstrumental?8:0, t=>Math.sin(t*Math.PI)*100, ttsDur);
-    if (!mixPlaying) return cleanup();
+    ttsGain.gain.value=1; ttsEl.play();
+    const ttsDur=(ttsEl.duration>0?ttsEl.duration:4)*1000;
+    await animMeters(()=>sampleUrl?8:0,t=>Math.sin(t*Math.PI)*100,ttsDur);
+    if(!mixPlaying) return cleanup();
 
-    // FADE IN + OUTRO
     setTL(3); setMix('🔊','Encerrando...','Instrumental volta e encerra');
-    ttsGain.gain.linearRampToValueAtTime(0, mixCtx.currentTime+0.5);
-    if (musicGain) {
-      musicGain.gain.linearRampToValueAtTime(0.7, mixCtx.currentTime+1);
-      musicGain.gain.linearRampToValueAtTime(0, mixCtx.currentTime+2);
-    }
+    ttsGain.gain.linearRampToValueAtTime(0,mixCtx.currentTime+0.5);
+    if(musicGain){musicGain.gain.linearRampToValueAtTime(0.7,mixCtx.currentTime+1);musicGain.gain.linearRampToValueAtTime(0,mixCtx.currentTime+2);}
     setTL(4);
-    await animMeters(t=>t<.5?(t/.5)*70:(1-(t-.5)/.5)*70, t=>t<.25?(1-t/.25)*100:0, 2000);
+    await animMeters(t=>t<.5?(t/.5)*70:(1-(t-.5)/.5)*70,t=>t<.25?(1-t/.25)*100:0,2000);
 
-    setMix('✅','Preview concluído!','Spot pronto para salvar');
-    setMeters(0,0);
-  } catch(e) { setMix('❌','Erro no preview',e.message); }
+    setMix('✅','Preview concluído!','Spot pronto para salvar'); setMeters(0,0);
+  } catch(e) { setMix('❌','Erro',e.message); }
   cleanup();
 }
 
 function cleanup() {
-  mixPlaying = false;
-  try { mixCtx?.close(); } catch(e){}
-  document.getElementById('previewBtn').style.display = 'inline-flex';
-  document.getElementById('stopPreviewBtn').style.display = 'none';
+  mixPlaying=false; try{mixCtx?.close();}catch(e){}
+  const pb=document.getElementById('previewBtn'); if(pb) pb.style.display='inline-flex';
+  const sb=document.getElementById('stopPreviewBtn'); if(sb) sb.style.display='none';
 }
-
-function stopPreview() { mixPlaying = false; cleanup(); }
+function stopPreview() { mixPlaying=false; cleanup(); }
 
 // ── UTILS ─────────────────────────────────────────────────────────────────────
 function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 function showToast(msg, type='') {
   const el = document.getElementById('toastEl');
-  el.textContent = msg;
-  el.className = 'toast ' + type;
-  el.style.display = 'block';
-  clearTimeout(el._timeout);
-  el._timeout = setTimeout(() => el.style.display = 'none', 3500);
+  el.textContent = msg; el.className='toast '+type; el.style.display='block';
+  clearTimeout(el._t); el._t = setTimeout(()=>el.style.display='none', 3500);
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
