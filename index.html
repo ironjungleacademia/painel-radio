@@ -393,6 +393,7 @@ const CLIENT_ID = 'b631bc37b95d473b8cf42f29c98ff818';
 const REDIRECT_URI = 'https://ironjungleacademia.github.io/painel-radio';
 const SCOPES = 'user-read-playback-state user-modify-playback-state user-read-currently-playing';
 const ELEVEN_API_KEY = 'sk_81e1fecde27aa738245bc3e615f515bc8b4c0fcf266105fa';
+const GOOGLE_TTS_KEY = 'AIzaSyBoXXsM6E91ztV0cBizNMjTI13sdjUGjx0';
 const ROCK_SAMPLE_URL = 'https://cdn.jsdelivr.net/gh/ironjunglecontato/iron-jungle-radio@main/rock-intro.mp3';
 const DIAS_SEMANA = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 
@@ -433,7 +434,30 @@ async function fetchElevenVoices() {
   }
 }
 
-function updateVoiceSelects() {
+async function generateGoogleTTS(text, voiceName) {
+  try {
+    const res = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${GOOGLE_TTS_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: { text },
+        voice: { languageCode: 'pt-BR', name: voiceName },
+        audioConfig: { audioEncoding: 'MP3', speakingRate: 1.0, pitch: 0 }
+      })
+    });
+    if (!res.ok) throw new Error('Status ' + res.status);
+    const data = await res.json();
+    // Converter base64 para blob
+    const binary = atob(data.audioContent);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: 'audio/mp3' });
+    return URL.createObjectURL(blob);
+  } catch(e) {
+    showToast('❌ Erro Google TTS: ' + e.message, 'error');
+    return null;
+  }
+}
   const selects = ['recVoz', 'spotVoice'];
   selects.forEach(id => {
     const sel = document.getElementById(id);
@@ -894,12 +918,9 @@ function closeAgendamento() {
 }
 
 function renderRecepcao() {
-  const voiceOptions = elevenVoices.length > 0
-    ? elevenVoices.map(v=>`<option value="${v.voice_id}">${v.name}</option>`).join('')
-    : '<option value="">Carregando vozes...</option>';
   const html = `
   <div class="page-title">📣 Chamada à Recepção</div>
-  <div class="page-sub">Toca imediatamente via ElevenLabs, pausando o Spotify.</div>
+  <div class="page-sub">Toca imediatamente via Google TTS, pausando o Spotify.</div>
   <div class="card card-gold">
     <div class="section-title">Quem está sendo chamado?</div>
     <div class="person-type-btns">
@@ -908,11 +929,20 @@ function renderRecepcao() {
     </div>
     <label class="label">Nome</label>
     <input id="recNome" placeholder="Digite o nome..." oninput="updatePreview()" style="margin-bottom:14px">
-    <div class="flex-between" style="margin-bottom:7px">
-      <label class="label" style="margin-bottom:0">Voz (ElevenLabs)</label>
-      <button class="btn btn-dark btn-sm" onclick="reloadVoices()">🔄 Recarregar vozes</button>
-    </div>
-    <select id="recVoz" style="margin-bottom:14px">${voiceOptions}</select>
+    <label class="label">Voz</label>
+    <select id="recVoz" style="margin-bottom:14px">
+      <optgroup label="🎙 Vozes Femininas">
+        <option value="pt-BR-Wavenet-A">Feminina 1 — Wavenet A (Natural)</option>
+        <option value="pt-BR-Wavenet-C">Feminina 2 — Wavenet C (Natural)</option>
+        <option value="pt-BR-Wavenet-E">Feminina 3 — Wavenet E (Natural)</option>
+        <option value="pt-BR-Standard-A">Feminina 4 — Standard A</option>
+      </optgroup>
+      <optgroup label="🎙 Vozes Masculinas">
+        <option value="pt-BR-Wavenet-B">Masculina 1 — Wavenet B (Natural)</option>
+        <option value="pt-BR-Wavenet-D">Masculina 2 — Wavenet D (Natural)</option>
+        <option value="pt-BR-Standard-B">Masculina 3 — Standard B</option>
+      </optgroup>
+    </select>
     <label class="label">Trilha Instrumental</label>
     <select id="recInstrumental" style="margin-bottom:14px">
       <option value="">Sem trilha</option>
@@ -926,10 +956,6 @@ function renderRecepcao() {
     </button>
   </div>`;
   document.getElementById('pageContent').innerHTML = html;
-  // Recarregar vozes ao abrir a página
-  if (elevenVoices.length === 0) {
-    fetchElevenVoices();
-  }
 }
 
 function renderConfig() {
@@ -1100,16 +1126,15 @@ function updatePreview() {
 async function fireRecepcao() {
   const nome = document.getElementById('recNome')?.value?.trim();
   if (!nome) { showToast('⚠️ Digite o nome da pessoa!', 'error'); return; }
-  const voiceId = document.getElementById('recVoz')?.value;
-  if (!voiceId) { showToast('⚠️ Selecione uma voz!', 'error'); return; }
+  const voiceName = document.getElementById('recVoz')?.value;
   const instrumental = document.getElementById('recInstrumental')?.value;
   const text = `Atenção! O ${recType.toLowerCase()} ${nome} está sendo solicitado a comparecer à recepção. Obrigado!`;
 
   const btn = document.getElementById('recBtn');
   btn.disabled = true; btn.textContent = '⏳ Gerando áudio...';
-  showToast('🎙️ Gerando voz no ElevenLabs...', 'success');
+  showToast('🎙️ Gerando voz no Google TTS...', 'success');
 
-  const audioUrl = await generateTTS(text, voiceId);
+  const audioUrl = await generateGoogleTTS(text, voiceName);
   if (!audioUrl) { btn.disabled=false; btn.textContent='📣 Chamar Agora'; return; }
 
   await spotifyPause();
