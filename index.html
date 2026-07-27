@@ -239,9 +239,6 @@ select option{background:var(--dark2)}
     <div class="nav-item" onclick="showPage('recepcao')" id="nav-recepcao">
       <span class="nav-icon">📣</span> Chamada à Recepção
     </div>
-    <div class="nav-item" onclick="showPage('playlist')" id="nav-playlist">
-      <span class="nav-icon">🎵</span> Playlist Colaborativa
-    </div>
     <div class="nav-item" onclick="showPage('config')" id="nav-config">
       <span class="nav-icon">⚙️</span> Configurações
     </div>
@@ -1178,17 +1175,7 @@ function renderRecepcao() {
     <input id="recNome" placeholder="Digite o nome..." oninput="updatePreview()" style="margin-bottom:14px">
     <label class="label">Voz</label>
     <select id="recVoz" style="margin-bottom:14px">
-      <optgroup label="🎙 Vozes Femininas">
-        <option value="pt-BR-Wavenet-A">Feminina 1 — Wavenet A (Natural)</option>
-        <option value="pt-BR-Wavenet-C">Feminina 2 — Wavenet C (Natural)</option>
-        <option value="pt-BR-Wavenet-E">Feminina 3 — Wavenet E (Natural)</option>
-        <option value="pt-BR-Standard-A">Feminina 4 — Standard A</option>
-      </optgroup>
-      <optgroup label="🎙 Vozes Masculinas">
-        <option value="pt-BR-Wavenet-B">Masculina 1 — Wavenet B (Natural)</option>
-        <option value="pt-BR-Wavenet-D">Masculina 2 — Wavenet D (Natural)</option>
-        <option value="pt-BR-Standard-B">Masculina 3 — Standard B</option>
-      </optgroup>
+      <option value="pt-BR-Wavenet-B" selected>🎙 Masculina — Wavenet B (Natural)</option>
     </select>
     <div class="preview-text" id="recPreview">
       Atenção! O aluno [nome] está sendo solicitado(a) a comparecer à recepção. Obrigado!
