@@ -831,7 +831,7 @@ async function playSpotAudio(spot) {
       const instrumentalData = spot.instrumentalData || await carregarAudio(spot.id, 'instrumental');
 
       if (!ttsData) { await wait(2000); resolve(); return; }
-    try {
+
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       const ttsEl = new Audio(ttsData);
       const ttsSrc = ctx.createMediaElementSource(ttsEl);
