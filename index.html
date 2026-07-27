@@ -913,7 +913,7 @@ async function loadPlaylist() {
   if (!el) return;
   el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-dim)">⏳ Carregando...</div>';
 
-  const data = await spotifyFetch(`/playlists/${COLLAB_PLAYLIST_ID}/tracks?limit=50&fields=items(track(id,name,artists,album(images)))`);
+  const data = await spotifyFetch(`/playlists/${COLLAB_PLAYLIST_ID}/tracks?limit=50`);
   if (!data || !data.items) {
     el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--red)">❌ Erro ao carregar playlist. Verifique se o Spotify está conectado.</div>';
     return;
