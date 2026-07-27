@@ -591,9 +591,20 @@ async function refreshToken() {
   return false;
 }
 
+const SCOPES_VERSION = 'v3'; // Incrementar para forçar novo login
+
 async function checkAuth() {
   const urlParams = new URLSearchParams(window.location.search);
   const code = urlParams.get('code');
+
+  // Verificar se scopes estão atualizados
+  const savedScopesVersion = localStorage.getItem('ij_scopes_version');
+  if (savedScopesVersion !== SCOPES_VERSION) {
+    localStorage.removeItem('ij_token');
+    localStorage.removeItem('ij_refresh');
+    localStorage.setItem('ij_scopes_version', SCOPES_VERSION);
+  }
+
   if (code) {
     window.history.replaceState({}, '', window.location.pathname);
     const ok = await exchangeCode(code);
@@ -945,21 +956,10 @@ async function loadPlaylist() {
   if (!el) return;
   el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-dim)">⏳ Carregando...</div>';
 
-  if (!clientCredToken) await getClientCredToken();
+  const data = await spotifyFetch(`/playlists/${COLLAB_PLAYLIST_ID}/tracks?limit=50`);
 
-  const res = await fetch(`https://api.spotify.com/v1/playlists/${COLLAB_PLAYLIST_ID}/tracks?limit=50`, {
-    headers: { 'Authorization': 'Bearer ' + clientCredToken }
-  });
-
-  if (!res.ok) {
-    const errData = await res.json().catch(()=>({}));
-    el.innerHTML = `<div style="text-align:center;padding:20px;color:var(--red)">❌ Erro ${res.status}: ${errData?.error?.message || 'Verifique a conexão'}</div>`;
-    return;
-  }
-
-  const data = await res.json();
   if (!data || !data.items) {
-    el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--red)">❌ Erro ao carregar playlist.</div>';
+    el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--red)">❌ Erro ao carregar. Tente sair e entrar novamente no Spotify.</div>';
     return;
   }
 
@@ -990,7 +990,7 @@ async function loadPlaylist() {
 }
 
 async function getArtistGenres(artistId) {
-  const data = await spotifyPublicFetch(`/artists/${artistId}`);
+  const data = await spotifyFetch(`/artists/${artistId}`);
   return data?.genres || [];
 }
 
