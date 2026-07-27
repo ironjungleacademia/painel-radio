@@ -275,7 +275,7 @@ select option{background:var(--dark2)}
       <span class="nav-icon">📅</span> Agenda da Semana
     </div>
     <div class="nav-item" onclick="showPage('avisos')" id="nav-avisos">
-      <span class="nav-icon">📢</span> Avisos
+      <span class="nav-icon">📢</span> Avisos por Voz
     </div>
     <div class="nav-item" onclick="showPage('config')" id="nav-config">
       <span class="nav-icon">⚙️</span> Configurações
@@ -435,6 +435,52 @@ const DIAS_SEMANA = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 
 // ── STATE ────────────────────────────────────────────────────────────────────
 let accessToken = null;
+// ── INDEXEDDB PARA ÁUDIOS ─────────────────────────────────────────────────────
+let db = null;
+
+async function initDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('IronJungleDB', 1);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('audios')) db.createObjectStore('audios');
+    };
+    req.onsuccess = e => { db = e.target.result; resolve(); };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function salvarAudio(id, tipo, data) {
+  if (!db) await initDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction('audios', 'readwrite');
+    tx.objectStore('audios').put(data, `${id}_${tipo}`);
+    tx.oncomplete = resolve;
+    tx.onerror = resolve;
+  });
+}
+
+async function carregarAudio(id, tipo) {
+  if (!db) await initDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction('audios', 'readonly');
+    const req = tx.objectStore('audios').get(`${id}_${tipo}`);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => resolve(null);
+  });
+}
+
+async function deletarAudios(id) {
+  if (!db) await initDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction('audios', 'readwrite');
+    tx.objectStore('audios').delete(`${id}_tts`);
+    tx.objectStore('audios').delete(`${id}_instrumental`);
+    tx.oncomplete = resolve;
+    tx.onerror = resolve;
+  });
+}
+
 let spots = JSON.parse(localStorage.getItem('ij_spots') || '[]');
 let settings = JSON.parse(localStorage.getItem('ij_settings') || '{"interval":3,"volume":"Normal"}');
 let elevenVoices = [];
@@ -779,10 +825,15 @@ async function playSpotById(id, auto=false) {
 
 async function playSpotAudio(spot) {
   return new Promise(async resolve => {
-    if (!spot.ttsData) { await wait(2000); resolve(); return; }
+    try {
+      // Carregar áudios do IndexedDB
+      const ttsData = spot.ttsData || await carregarAudio(spot.id, 'tts');
+      const instrumentalData = spot.instrumentalData || await carregarAudio(spot.id, 'instrumental');
+
+      if (!ttsData) { await wait(2000); resolve(); return; }
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const ttsEl = new Audio(spot.ttsData);
+      const ttsEl = new Audio(ttsData);
       const ttsSrc = ctx.createMediaElementSource(ttsEl);
       const ttsGain = ctx.createGain();
       ttsSrc.connect(ttsGain); ttsGain.connect(ctx.destination);
@@ -790,7 +841,7 @@ async function playSpotAudio(spot) {
       let musicEl = null, musicGain = null;
 
       // Usar sample hospedado ou upload personalizado
-      const instrumentalUrl = spot.instrumentalData || getSampleUrl(spot.instrumental);
+      const instrumentalUrl = instrumentalData || getSampleUrl(spot.instrumental);
       if (instrumentalUrl) {
         musicEl = new Audio(instrumentalUrl);
         musicEl.crossOrigin = 'anonymous';
@@ -1310,12 +1361,20 @@ function openModal(id=null) {
       document.getElementById('spotNameInput').value = spot.name;
       document.getElementById('spotInstrumental').value = spot.instrumental || '';
       document.getElementById('introDuration').value = spot.introDuration || '5';
-      if (spot.ttsData) {
-        document.getElementById('ttsUploadArea').innerHTML = '<div class="upload-icon">✅</div><div class="upload-text" style="color:var(--green)">Áudio carregado</div><div class="upload-sub">Clique para substituir</div>';
-        document.getElementById('ttsUploadArea').classList.add('upload-done');
-        ttsBlob = spot.ttsData;
+      if (spot.ttsData || true) {
+        // Tentar carregar do IndexedDB
+        carregarAudio(spot.id, 'tts').then(audio => {
+          if (audio) {
+            ttsBlob = audio;
+            document.getElementById('ttsUploadArea').innerHTML = '<div class="upload-icon">✅</div><div class="upload-text" style="color:var(--green)">Áudio carregado</div><div class="upload-sub">Clique para substituir</div>';
+            document.getElementById('ttsUploadArea').classList.add('upload-done');
+            checkMixerReady();
+          }
+        });
+        carregarAudio(spot.id, 'instrumental').then(audio => {
+          if (audio) instrumentalBlob = audio;
+        });
       }
-      if (spot.instrumentalData) instrumentalBlob = spot.instrumentalData;
     }
   }
   document.getElementById('modalCriar').style.display = 'flex';
@@ -1366,20 +1425,27 @@ function saveSpot() {
   if (!ttsBlob) { showToast('⚠️ Faça upload do áudio do locutor!', 'error'); return; }
   const instrumental = document.getElementById('spotInstrumental').value;
   const introDuration = document.getElementById('introDuration').value;
+  const spotId = editingSpotId || Date.now().toString();
 
   if (editingSpotId) {
     const idx = spots.findIndex(s=>s.id===editingSpotId);
-    if (idx !== -1) spots[idx] = { ...spots[idx], name, instrumental, introDuration, ttsData: ttsBlob, instrumentalData: instrumentalBlob };
+    if (idx !== -1) spots[idx] = { ...spots[idx], name, instrumental, introDuration };
     showToast('✅ Spot atualizado!', 'success');
   } else {
-    spots.push({ id: Date.now().toString(), name, instrumental, introDuration, ttsData: ttsBlob, instrumentalData: instrumentalBlob, active: true, playCount: 0, schedule: {}, createdAt: new Date().toLocaleDateString('pt-BR') });
+    spots.push({ id: spotId, name, instrumental, introDuration, active: true, playCount: 0, schedule: {}, createdAt: new Date().toLocaleDateString('pt-BR') });
     showToast('✅ Spot criado!', 'success');
   }
+
+  // Salvar áudios no IndexedDB
+  if (ttsBlob) await salvarAudio(spotId, 'tts', ttsBlob);
+  if (instrumentalBlob) await salvarAudio(spotId, 'instrumental', instrumentalBlob);
+
   saveSpots(); closeModal(); showPage('spots');
 }
 
 function deleteSpot(id) {
   if (!confirm('Remover este spot?')) return;
+  deletarAudios(id);
   spots = spots.filter(s=>s.id!==id);
   saveSpots(); showPage('spots'); showToast('🗑 Spot removido', 'error');
 }
@@ -1389,7 +1455,13 @@ function toggleSpot(id) {
   if (spot) { spot.active = !spot.active; saveSpots(); showPage(currentPage); }
 }
 
-function saveSpots() { localStorage.setItem('ij_spots', JSON.stringify(spots)); }
+function saveSpots() {
+  const spotsParaSalvar = spots.map(s => {
+    const { ttsData, instrumentalData, ...rest } = s;
+    return rest;
+  });
+  localStorage.setItem('ij_spots', JSON.stringify(spotsParaSalvar));
+}
 function saveSettings() { localStorage.setItem('ij_settings', JSON.stringify(settings)); document.getElementById('spotInterval').textContent = settings.interval; }
 
 async function reloadVoices() {
@@ -1426,8 +1498,8 @@ async function fireRecepcao() {
   if (!audioUrl) { btn.disabled=false; btn.textContent='📣 Chamar Agora'; return; }
 
   await spotifyPause();
-  playBip();
-  await wait(500);
+  await playRadioSignal();
+  await wait(300);
 
   try {
     const audio = new Audio(audioUrl);
@@ -1528,19 +1600,34 @@ function showToast(msg, type='') {
 }
 
 // ── BIP ───────────────────────────────────────────────────────────────────────
-function playBip() {
-  const ctx = new (window.AudioContext || window.webkitAudioContext)();
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.frequency.value = 880;
-  osc.type = 'sine';
-  gain.gain.setValueAtTime(0.3, ctx.currentTime);
-  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
-  osc.start(ctx.currentTime);
-  osc.stop(ctx.currentTime + 0.3);
-  setTimeout(() => ctx.close(), 500);
+function playRadioSignal() {
+  return new Promise(resolve => {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const gain = ctx.createGain();
+    gain.connect(ctx.destination);
+    gain.gain.value = 0.3;
+
+    // 3 tons ascendentes estilo sinal de rádio/broadcast
+    const tons = [880, 1100, 1320];
+    let tempo = ctx.currentTime;
+
+    tons.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.connect(g); g.connect(ctx.destination);
+      osc.frequency.value = freq;
+      osc.type = 'sine';
+      g.gain.setValueAtTime(0, tempo);
+      g.gain.linearRampToValueAtTime(0.3, tempo + 0.02);
+      g.gain.setValueAtTime(0.3, tempo + 0.15);
+      g.gain.linearRampToValueAtTime(0, tempo + 0.18);
+      osc.start(tempo);
+      osc.stop(tempo + 0.2);
+      tempo += 0.22;
+    });
+
+    setTimeout(() => { ctx.close(); resolve(); }, 800);
+  });
 }
 
 // ── COUNTDOWN ─────────────────────────────────────────────────────────────────
@@ -1614,58 +1701,112 @@ function renderAgenda() {
   </div>`;
 }
 
-// ── AVISOS ────────────────────────────────────────────────────────────────────
-let avisos = JSON.parse(localStorage.getItem('ij_avisos') || '[]');
+// ── AVISOS POR VOZ ────────────────────────────────────────────────────────────
+let historicaAvisos = JSON.parse(localStorage.getItem('ij_avisos_hist') || '[]');
 
 function renderAvisos() {
   return `
-  <div class="page-title">📢 Avisos da Academia</div>
-  <div class="page-sub">Gerencie comunicados para exibir no painel.</div>
-  <div class="card" style="margin-bottom:16px">
-    <div class="section-title" style="margin-bottom:14px">Novo Aviso</div>
-    <label class="label">Título</label>
-    <input id="avisoTitulo" placeholder="Ex: Manutenção dos aparelhos" style="margin-bottom:10px">
-    <label class="label">Mensagem</label>
-    <textarea id="avisoMsg" placeholder="Digite o aviso completo..." style="margin-bottom:10px;min-height:80px;resize:vertical"></textarea>
-    <label class="label">Tipo</label>
-    <select id="avisoTipo" style="margin-bottom:14px;max-width:220px">
-      <option value="normal">📢 Normal</option>
-      <option value="urgente">🔴 Urgente</option>
-      <option value="info">ℹ️ Informativo</option>
+  <div class="page-title">📢 Avisos por Voz</div>
+  <div class="page-sub">Digite um aviso e o sistema gera o áudio automaticamente via Google TTS e toca na academia.</div>
+
+  <div class="card card-gold" style="margin-bottom:16px">
+    <div class="section-title" style="margin-bottom:14px">🎙️ Gerar Aviso Agora</div>
+    <label class="label">Texto do Aviso</label>
+    <textarea id="avisoTexto" placeholder="Ex: Atenção alunos! A aula de spinning das 19h foi cancelada. Pedimos desculpas pelo inconveniente."
+      style="margin-bottom:12px;min-height:100px;resize:vertical"></textarea>
+    <label class="label">Voz</label>
+    <select id="avisoVoz" style="margin-bottom:14px;max-width:300px">
+      <option value="pt-BR-Wavenet-B">🎙 Masculina — Wavenet B (Natural)</option>
+      <option value="pt-BR-Wavenet-A">🎙 Feminina — Wavenet A (Natural)</option>
+      <option value="pt-BR-Wavenet-D">🎙 Masculina — Wavenet D (Natural)</option>
+      <option value="pt-BR-Wavenet-C">🎙 Feminina — Wavenet C (Natural)</option>
     </select>
-    <button class="btn btn-gold btn-full" onclick="addAviso()">📢 Publicar Aviso</button>
+    <button class="btn btn-gold btn-full" id="avisoBtn" onclick="gerarAviso()">
+      📢 Gerar e Tocar Agora
+    </button>
   </div>
-  <div class="section-title" style="margin-bottom:12px">Avisos Publicados (${avisos.length})</div>
-  ${avisos.length === 0
-    ? '<div style="text-align:center;padding:30px;color:var(--text-dim)">📭 Nenhum aviso publicado</div>'
-    : avisos.map(a => `
-      <div class="aviso-item ${a.tipo}">
-        <div class="flex-between">
-          <div class="aviso-titulo">${a.titulo}</div>
-          <button class="btn btn-red btn-sm" onclick="removeAviso('${a.id}')">🗑</button>
-        </div>
-        <div class="aviso-msg">${a.msg}</div>
-        <div class="aviso-meta">
-          <span>🕐 ${a.data}</span>
-          <span class="badge ${a.tipo==='urgente'?'badge-red':a.tipo==='info'?'badge-blue':'badge-gold'}">${a.tipo}</span>
-        </div>
-      </div>`).join('')}`;
+
+  <div class="card">
+    <div class="flex-between" style="margin-bottom:14px">
+      <div class="section-title" style="margin-bottom:0">Histórico de Avisos</div>
+      <button class="btn btn-dark btn-sm" onclick="limparHistoricoAvisos()">🗑 Limpar</button>
+    </div>
+    ${historicaAvisos.length === 0
+      ? '<div style="text-align:center;padding:24px;color:var(--text-dim)">📭 Nenhum aviso gerado ainda</div>'
+      : historicaAvisos.slice(0,10).map(a => `
+        <div class="spot-item">
+          <div class="spot-cover">📢</div>
+          <div class="spot-info">
+            <div class="spot-name" style="font-size:13px;white-space:normal">${a.texto.substring(0,80)}${a.texto.length>80?'...':''}</div>
+            <div class="spot-meta">🕐 ${a.data} · ${a.voz}</div>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="repetirAviso('${a.id}')">▶ Repetir</button>
+        </div>`).join('')}
+  </div>`;
 }
 
-function addAviso() {
-  const titulo = document.getElementById('avisoTitulo')?.value?.trim();
-  const msg = document.getElementById('avisoMsg')?.value?.trim();
-  const tipo = document.getElementById('avisoTipo')?.value || 'normal';
-  if (!titulo || !msg) { showToast('⚠️ Preencha título e mensagem!', 'error'); return; }
-  avisos.unshift({ id: Date.now().toString(), titulo, msg, tipo, data: new Date().toLocaleString('pt-BR') });
-  localStorage.setItem('ij_avisos', JSON.stringify(avisos));
-  showToast('✅ Aviso publicado!', 'success');
+async function gerarAviso() {
+  const texto = document.getElementById('avisoTexto')?.value?.trim();
+  if (!texto) { showToast('⚠️ Digite o texto do aviso!', 'error'); return; }
+  const voz = document.getElementById('avisoVoz')?.value || 'pt-BR-Wavenet-B';
+  const btn = document.getElementById('avisoBtn');
+  btn.disabled = true; btn.textContent = '⏳ Gerando áudio...';
+
+  const audioUrl = await generateGoogleTTS(texto, voz);
+  if (!audioUrl) { btn.disabled=false; btn.textContent='📢 Gerar e Tocar Agora'; return; }
+
+  await spotifyPause();
+  await playRadioSignal();
+  await wait(300);
+  btn.textContent = '🔊 Tocando aviso...';
+
+  try {
+    const audio = new Audio(audioUrl);
+    audio.play();
+    await new Promise(r => { audio.onended = r; setTimeout(r, 60000); });
+  } catch(e) { showToast('❌ Erro ao reproduzir: ' + e.message, 'error'); }
+
+  await spotifyPlay();
+  isPlaying = true;
+  document.getElementById('playPauseBtn').textContent = '⏸';
+  showToast('✅ Aviso concluído — Spotify retomado', 'success');
+
+  // Salvar no histórico
+  const vozeNomes = {'pt-BR-Wavenet-B':'Masculina B','pt-BR-Wavenet-A':'Feminina A','pt-BR-Wavenet-D':'Masculina D','pt-BR-Wavenet-C':'Feminina C'};
+  historicaAvisos.unshift({ id: Date.now().toString(), texto, voz: vozeNomes[voz]||voz, data: new Date().toLocaleString('pt-BR'), audioUrl });
+  if (historicaAvisos.length > 20) historicaAvisos.pop();
+  localStorage.setItem('ij_avisos_hist', JSON.stringify(historicaAvisos.map(a=>({...a,audioUrl:null}))));
+
+  btn.disabled = false; btn.textContent = '📢 Gerar e Tocar Agora';
+  document.getElementById('avisoTexto').value = '';
   showPage('avisos');
 }
 
-function removeAviso(id) {
-  avisos = avisos.filter(a => a.id !== id);
-  localStorage.setItem('ij_avisos', JSON.stringify(avisos));
+async function repetirAviso(id) {
+  const aviso = historicaAvisos.find(a => a.id === id);
+  if (!aviso) { showToast('⚠️ Áudio não disponível — gere novamente', 'error'); return; }
+  if (!aviso.audioUrl) {
+    // Regera o áudio
+    const voz = Object.entries({'Masculina B':'pt-BR-Wavenet-B','Feminina A':'pt-BR-Wavenet-A','Masculina D':'pt-BR-Wavenet-D','Feminina C':'pt-BR-Wavenet-C'}).find(([k])=>k===aviso.voz)?.[1] || 'pt-BR-Wavenet-B';
+    const audioUrl = await generateGoogleTTS(aviso.texto, voz);
+    if (!audioUrl) return;
+    aviso.audioUrl = audioUrl;
+  }
+  await spotifyPause();
+  await playRadioSignal();
+  await wait(300);
+  const audio = new Audio(aviso.audioUrl);
+  audio.play();
+  await new Promise(r => { audio.onended = r; setTimeout(r, 60000); });
+  await spotifyPlay();
+  isPlaying = true;
+  document.getElementById('playPauseBtn').textContent = '⏸';
+  showToast('✅ Aviso repetido!', 'success');
+}
+
+function limparHistoricoAvisos() {
+  historicaAvisos = [];
+  localStorage.setItem('ij_avisos_hist', JSON.stringify([]));
   showPage('avisos');
 }
 
@@ -1759,7 +1900,7 @@ async function testeVolume() {
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 document.getElementById('spotInterval').textContent = settings.interval;
-checkAuth().catch(console.error);
+initDB().then(() => checkAuth()).catch(console.error);
 </script>
 </body>
 </html>
