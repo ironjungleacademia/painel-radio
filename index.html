@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Iron Jungle — Painel de Spots</title>
+<title>Iron Jungle — Painel de Spots v2.1</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;600;700&display=swap');
 :root {
@@ -351,6 +351,16 @@ select option{background:var(--dark2)}
       <option value="4">4 segundos</option>
       <option value="5" selected>5 segundos</option>
     </select>
+
+    <div style="background:var(--dark3);border-radius:10px;padding:14px;margin-bottom:14px;border:1px solid var(--dark4)">
+      <div class="toggle-row">
+        <div class="toggle" id="tocarJuntoToggle" onclick="toggleTocarJunto()"></div>
+        <div>
+          <div style="font-weight:700;font-size:15px">🎵 Tocar junto com a música</div>
+          <div style="font-size:12px;color:var(--text-dim);margin-top:2px">Spotify continua tocando — ideal para vinhetas curtas</div>
+        </div>
+      </div>
+    </div>
 
     <div id="mixerSection" style="display:none">
       <div class="sep"></div>
@@ -812,13 +822,22 @@ async function playSpotById(id, auto=false) {
   isSpotPlaying = true;
   spot.playCount = (spot.playCount || 0) + 1;
   saveSpots();
-  await spotifyPause();
-  showToast('⏸ Spotify pausado — tocando spot', 'success');
-  await playSpotAudio(spot);
-  await spotifyPlay();
-  isPlaying = true;
-  document.getElementById('playPauseBtn').textContent = '⏸';
-  showToast('▶ Spotify retomado', 'success');
+
+  if (spot.tocarJunto) {
+    // Toca junto com o Spotify sem pausar
+    showToast('🎵 Tocando vinheta junto com a música!', 'success');
+    await playSpotAudio(spot);
+  } else {
+    // Pausa o Spotify, toca o spot e retoma
+    await spotifyPause();
+    showToast('⏸ Spotify pausado — tocando spot', 'success');
+    await playSpotAudio(spot);
+    await spotifyPlay();
+    isPlaying = true;
+    document.getElementById('playPauseBtn').textContent = '⏸';
+    showToast('▶ Spotify retomado', 'success');
+  }
+
   isSpotPlaying = false;
   if (currentPage === 'dashboard' || currentPage === 'spots') showPage(currentPage);
 }
@@ -837,7 +856,7 @@ async function playSpotAudio(spot) {
       const ttsSrc = ctx.createMediaElementSource(ttsEl);
       const ttsGain = ctx.createGain();
       ttsSrc.connect(ttsGain); ttsGain.connect(ctx.destination);
-      ttsGain.gain.value = 1;
+      ttsGain.gain.value = (settings.spotVolume || 80) / 100;
       let musicEl = null, musicGain = null;
 
       // Usar sample hospedado ou upload personalizado
@@ -970,10 +989,11 @@ function renderSpotItem(spot, showEdit=false) {
   const icon = icons[spot.instrumental] || '🎙️';
   const totalAgendamentos = Object.values(spot.schedule || {}).reduce((a,v)=>a+(v.length||0),0);
   const agendado = totalAgendamentos > 0 ? `<span class="badge badge-blue">⏰ ${totalAgendamentos} horário(s)</span>` : '';
+  const vinheta = spot.tocarJunto ? `<span class="badge badge-green">🎵 Vinheta</span>` : '';
   return `<div class="spot-item ${spot.active?'active-spot':''}" id="spotItem${spot.id}">
     <div class="spot-cover">${icon}</div>
     <div class="spot-info">
-      <div class="spot-name">${spot.name} ${agendado}</div>
+      <div class="spot-name">${spot.name} ${agendado} ${vinheta}</div>
       <div class="spot-meta">Intro ${spot.introDuration||5}s · Tocado ${spot.playCount||0}x</div>
     </div>
     <div class="spot-actions">
@@ -1297,10 +1317,13 @@ function renderConfig() {
         <select style="margin-bottom:14px" onchange="settings.interval=this.value;document.getElementById('spotInterval').textContent=this.value;saveSettings()">
           ${[1,2,3,4,5,6,8,10].map(n=>`<option value="${n}" ${settings.interval==n?'selected':''}>A cada ${n} música${n>1?'s':''}</option>`).join('')}
         </select>
-        <label class="label">Volume dos Spots</label>
-        <select onchange="settings.volume=this.value;saveSettings()">
-          ${['Baixo','Normal','Alto'].map(v=>`<option ${settings.volume===v?'selected':''}>${v}</option>`).join('')}
-        </select>
+        <label class="label">Volume dos Spots: <span id="volLabel" style="color:var(--gold)">${settings.spotVolume||80}%</span></label>
+        <input type="range" min="10" max="100" step="5" value="${settings.spotVolume||80}"
+          style="width:100%;accent-color:var(--gold);cursor:pointer;margin-bottom:4px"
+          oninput="settings.spotVolume=parseInt(this.value);document.getElementById('volLabel').textContent=this.value+'%';saveSettings()">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-dim)">
+          <span>10%</span><span>Suave</span><span>Normal</span><span>Alto</span><span>100%</span>
+        </div>
       </div>
     </div>
     <div>
@@ -1314,18 +1337,6 @@ function renderConfig() {
   </div>
   <div style="display:flex;justify-content:flex-end">
     <button class="btn btn-gold" onclick="saveSettings();showToast('✅ Configurações salvas!','success')">Salvar</button>
-  </div>
-
-  <div class="sep"></div>
-  <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:3px;color:var(--gold);margin-bottom:16px">🔊 Teste de Volume</div>
-  <div class="card" style="margin-bottom:16px">
-    <div class="section-title" style="margin-bottom:4px">Calibrar Volume dos Spots</div>
-    <div style="font-size:13px;color:var(--text-dim);margin-bottom:16px">Toca um tom de teste para comparar com o volume da música do Spotify.</div>
-    <div style="margin-bottom:12px">
-      <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;font-weight:700;letter-spacing:1px">VOLUME DO SPOT</div>
-      <div class="vol-bar"><div class="vol-fill vol-spot" id="volTestFill" style="width:0%"></div></div>
-    </div>
-    <button class="btn btn-gold btn-full" id="volTestBtn" onclick="testeVolume()">▶ Tocar Tom de Teste (5 segundos)</button>
   </div>
 
   <div class="sep"></div>
@@ -1348,6 +1359,9 @@ function openModal(id=null) {
   document.getElementById('modalTitleText').textContent = id ? 'EDITAR SPOT' : 'CRIAR SPOT';
   document.getElementById('spotNameInput').value = '';
   document.getElementById('spotInstrumental').value = '';
+  tocarJunto = false;
+  const tj = document.getElementById('tocarJuntoToggle');
+  if (tj) tj.classList.remove('on');
   document.getElementById('introDuration').value = '5';
   document.getElementById('ttsUploadArea').innerHTML = '<div class="upload-icon">🎙️</div><div class="upload-text">Clique para selecionar</div><div class="upload-sub">Arquivo MP3 gerado no ElevenLabs</div>';
   document.getElementById('ttsUploadArea').classList.remove('upload-done');
@@ -1361,6 +1375,9 @@ function openModal(id=null) {
       document.getElementById('spotNameInput').value = spot.name;
       document.getElementById('spotInstrumental').value = spot.instrumental || '';
       document.getElementById('introDuration').value = spot.introDuration || '5';
+      tocarJunto = spot.tocarJunto || false;
+      const tj = document.getElementById('tocarJuntoToggle');
+      if (tj) tj.classList.toggle('on', tocarJunto);
       if (spot.ttsData || true) {
         // Tentar carregar do IndexedDB
         carregarAudio(spot.id, 'tts').then(audio => {
@@ -1426,13 +1443,14 @@ async function saveSpot() {
   const instrumental = document.getElementById('spotInstrumental').value;
   const introDuration = document.getElementById('introDuration').value;
   const spotId = editingSpotId || Date.now().toString();
+  const spotTocarJunto = tocarJunto;
 
   if (editingSpotId) {
     const idx = spots.findIndex(s=>s.id===editingSpotId);
-    if (idx !== -1) spots[idx] = { ...spots[idx], name, instrumental, introDuration };
+    if (idx !== -1) spots[idx] = { ...spots[idx], name, instrumental, introDuration, tocarJunto: spotTocarJunto };
     showToast('✅ Spot atualizado!', 'success');
   } else {
-    spots.push({ id: spotId, name, instrumental, introDuration, active: true, playCount: 0, schedule: {}, createdAt: new Date().toLocaleDateString('pt-BR') });
+    spots.push({ id: spotId, name, instrumental, introDuration, tocarJunto: spotTocarJunto, active: true, playCount: 0, schedule: {}, createdAt: new Date().toLocaleDateString('pt-BR') });
     showToast('✅ Spot criado!', 'success');
   }
 
@@ -1502,9 +1520,15 @@ async function fireRecepcao() {
   await wait(300);
 
   try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const audio = new Audio(audioUrl);
+    const src = ctx.createMediaElementSource(audio);
+    const gain = ctx.createGain();
+    src.connect(gain); gain.connect(ctx.destination);
+    gain.gain.value = (settings.spotVolume || 80) / 100;
     audio.play();
     await new Promise(r => { audio.onended = r; setTimeout(r, 15000); });
+    ctx.close();
   } catch(e) { showToast('❌ Erro ao reproduzir: ' + e.message, 'error'); }
 
   await spotifyPlay();
@@ -1597,6 +1621,14 @@ function showToast(msg, type='') {
   const el = document.getElementById('toastEl');
   el.textContent = msg; el.className='toast '+type; el.style.display='block';
   clearTimeout(el._t); el._t = setTimeout(()=>el.style.display='none', 3500);
+}
+
+let tocarJunto = false;
+
+function toggleTocarJunto() {
+  tocarJunto = !tocarJunto;
+  const toggle = document.getElementById('tocarJuntoToggle');
+  if (toggle) toggle.classList.toggle('on', tocarJunto);
 }
 
 // ── BIP ───────────────────────────────────────────────────────────────────────
@@ -1761,9 +1793,15 @@ async function gerarAviso() {
   btn.textContent = '🔊 Tocando aviso...';
 
   try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const audio = new Audio(audioUrl);
+    const src = ctx.createMediaElementSource(audio);
+    const gain = ctx.createGain();
+    src.connect(gain); gain.connect(ctx.destination);
+    gain.gain.value = (settings.spotVolume || 80) / 100;
     audio.play();
     await new Promise(r => { audio.onended = r; setTimeout(r, 60000); });
+    ctx.close();
   } catch(e) { showToast('❌ Erro ao reproduzir: ' + e.message, 'error'); }
 
   await spotifyPlay();
@@ -1786,7 +1824,6 @@ async function repetirAviso(id) {
   const aviso = historicaAvisos.find(a => a.id === id);
   if (!aviso) { showToast('⚠️ Áudio não disponível — gere novamente', 'error'); return; }
   if (!aviso.audioUrl) {
-    // Regera o áudio
     const voz = Object.entries({'Masculina B':'pt-BR-Wavenet-B','Feminina A':'pt-BR-Wavenet-A','Masculina D':'pt-BR-Wavenet-D','Feminina C':'pt-BR-Wavenet-C'}).find(([k])=>k===aviso.voz)?.[1] || 'pt-BR-Wavenet-B';
     const audioUrl = await generateGoogleTTS(aviso.texto, voz);
     if (!audioUrl) return;
@@ -1795,9 +1832,15 @@ async function repetirAviso(id) {
   await spotifyPause();
   await playRadioSignal();
   await wait(300);
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
   const audio = new Audio(aviso.audioUrl);
+  const src = ctx.createMediaElementSource(audio);
+  const gain = ctx.createGain();
+  src.connect(gain); gain.connect(ctx.destination);
+  gain.gain.value = (settings.spotVolume || 80) / 100;
   audio.play();
   await new Promise(r => { audio.onended = r; setTimeout(r, 60000); });
+  ctx.close();
   await spotifyPlay();
   isPlaying = true;
   document.getElementById('playPauseBtn').textContent = '⏸';
