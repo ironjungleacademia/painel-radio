@@ -419,7 +419,39 @@ let ttsBlob = null;
 let instrumentalBlob = null;
 let editingSpotId = null;
 
-// ── ELEVENLABS ───────────────────────────────────────────────────────────────
+// ── SPOTIFY CLIENT CREDENTIALS (para playlists públicas) ─────────────────────
+let clientCredToken = null;
+
+async function getClientCredToken() {
+  try {
+    const res = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': 'Basic ' + btoa(CLIENT_ID + ':' + 'af3528186e5c4b16991608212bda8fbf')
+      },
+      body: 'grant_type=client_credentials'
+    });
+    const data = await res.json();
+    clientCredToken = data.access_token;
+    return clientCredToken;
+  } catch(e) { console.error('Erro client credentials:', e); return null; }
+}
+
+async function spotifyPublicFetch(endpoint) {
+  if (!clientCredToken) await getClientCredToken();
+  try {
+    const res = await fetch('https://api.spotify.com/v1' + endpoint, {
+      headers: { 'Authorization': 'Bearer ' + clientCredToken }
+    });
+    if (res.status === 401) {
+      await getClientCredToken();
+      return spotifyPublicFetch(endpoint);
+    }
+    if (!res.ok) return null;
+    return await res.json();
+  } catch(e) { return null; }
+}
 async function fetchElevenVoices() {
   try {
     const res = await fetch('https://api.elevenlabs.io/v1/voices', {
@@ -913,26 +945,19 @@ async function loadPlaylist() {
   if (!el) return;
   el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-dim)">⏳ Carregando...</div>';
 
-  console.log('Token atual:', accessToken?.substring(0,20) + '...');
-  console.log('Playlist ID:', COLLAB_PLAYLIST_ID);
-  console.log('URL:', `/playlists/${COLLAB_PLAYLIST_ID}/tracks?limit=50`);
+  if (!clientCredToken) await getClientCredToken();
 
   const res = await fetch(`https://api.spotify.com/v1/playlists/${COLLAB_PLAYLIST_ID}/tracks?limit=50`, {
-    headers: { 'Authorization': 'Bearer ' + accessToken }
+    headers: { 'Authorization': 'Bearer ' + clientCredToken }
   });
 
-  console.log('Status response:', res.status);
-
   if (!res.ok) {
-    const errData = await res.json();
-    console.log('Erro detalhado:', JSON.stringify(errData));
-    el.innerHTML = `<div style="text-align:center;padding:20px;color:var(--red)">❌ Erro ${res.status}: ${errData?.error?.message || 'Desconhecido'}</div>`;
+    const errData = await res.json().catch(()=>({}));
+    el.innerHTML = `<div style="text-align:center;padding:20px;color:var(--red)">❌ Erro ${res.status}: ${errData?.error?.message || 'Verifique a conexão'}</div>`;
     return;
   }
 
   const data = await res.json();
-  console.log('Dados recebidos:', data?.items?.length, 'músicas');
-
   if (!data || !data.items) {
     el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--red)">❌ Erro ao carregar playlist.</div>';
     return;
@@ -965,7 +990,7 @@ async function loadPlaylist() {
 }
 
 async function getArtistGenres(artistId) {
-  const data = await spotifyFetch(`/artists/${artistId}`);
+  const data = await spotifyPublicFetch(`/artists/${artistId}`);
   return data?.genres || [];
 }
 
