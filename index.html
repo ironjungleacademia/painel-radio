@@ -316,10 +316,6 @@ select option{background:var(--dark2)}
       <option value="4">4 segundos</option>
       <option value="5" selected>5 segundos</option>
     </select>
-    <label class="label">Voz (ElevenLabs)</label>
-    <select id="spotVoice" style="margin-bottom:14px">
-      <option value="">Carregando vozes...</option>
-    </select>
 
     <div id="mixerSection" style="display:none">
       <div class="sep"></div>
@@ -497,7 +493,7 @@ async function generateGoogleTTS(text, voiceName) {
 }
 
 function updateVoiceSelects() {
-  const selects = ['recVoz', 'spotVoice'];
+  const selects = ['recVoz'];
   selects.forEach(id => {
     const sel = document.getElementById(id);
     if (!sel) return;
@@ -1236,7 +1232,6 @@ function openModal(id=null) {
   document.getElementById('modalTitleText').textContent = id ? 'EDITAR SPOT' : 'CRIAR SPOT';
   document.getElementById('spotNameInput').value = '';
   document.getElementById('spotInstrumental').value = '';
-  document.getElementById('spotVoice').value = elevenVoices[0]?.voice_id || '';
   document.getElementById('introDuration').value = '5';
   document.getElementById('ttsUploadArea').innerHTML = '<div class="upload-icon">🎙️</div><div class="upload-text">Clique para selecionar</div><div class="upload-sub">Arquivo MP3 gerado no ElevenLabs</div>';
   document.getElementById('ttsUploadArea').classList.remove('upload-done');
@@ -1244,20 +1239,12 @@ function openModal(id=null) {
   document.getElementById('customInstrumentalUpload').style.display = 'none';
   document.getElementById('mixerSection').style.display = 'none';
 
-  // Populate voice select
-  const voiceSel = document.getElementById('spotVoice');
-  voiceSel.innerHTML = elevenVoices.length > 0
-    ? elevenVoices.map(v=>`<option value="${v.voice_id}">${v.name}</option>`).join('')
-    : '<option value="">Carregando vozes...</option>';
-
   if (id) {
     const spot = spots.find(s=>s.id===id);
     if (spot) {
       document.getElementById('spotNameInput').value = spot.name;
       document.getElementById('spotInstrumental').value = spot.instrumental || '';
-      if (voiceSel.querySelector(`option[value="${spot.voice}"]`)) voiceSel.value = spot.voice;
       document.getElementById('introDuration').value = spot.introDuration || '5';
-
       if (spot.ttsData) {
         document.getElementById('ttsUploadArea').innerHTML = '<div class="upload-icon">✅</div><div class="upload-text" style="color:var(--green)">Áudio carregado</div><div class="upload-sub">Clique para substituir</div>';
         document.getElementById('ttsUploadArea').classList.add('upload-done');
@@ -1313,15 +1300,14 @@ function saveSpot() {
   if (!name) { showToast('⚠️ Digite o nome do spot!', 'error'); return; }
   if (!ttsBlob) { showToast('⚠️ Faça upload do áudio do locutor!', 'error'); return; }
   const instrumental = document.getElementById('spotInstrumental').value;
-  const voice = document.getElementById('spotVoice').value;
   const introDuration = document.getElementById('introDuration').value;
 
   if (editingSpotId) {
     const idx = spots.findIndex(s=>s.id===editingSpotId);
-    if (idx !== -1) spots[idx] = { ...spots[idx], name, instrumental, voice, introDuration, ttsData: ttsBlob, instrumentalData: instrumentalBlob };
+    if (idx !== -1) spots[idx] = { ...spots[idx], name, instrumental, introDuration, ttsData: ttsBlob, instrumentalData: instrumentalBlob };
     showToast('✅ Spot atualizado!', 'success');
   } else {
-    spots.push({ id: Date.now().toString(), name, instrumental, voice, introDuration, ttsData: ttsBlob, instrumentalData: instrumentalBlob, active: true, playCount: 0, schedule: {}, createdAt: new Date().toLocaleDateString('pt-BR') });
+    spots.push({ id: Date.now().toString(), name, instrumental, introDuration, ttsData: ttsBlob, instrumentalData: instrumentalBlob, active: true, playCount: 0, schedule: {}, createdAt: new Date().toLocaleDateString('pt-BR') });
     showToast('✅ Spot criado!', 'success');
   }
   saveSpots(); closeModal(); showPage('spots');
