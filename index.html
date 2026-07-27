@@ -239,6 +239,9 @@ select option{background:var(--dark2)}
     <div class="nav-item" onclick="showPage('recepcao')" id="nav-recepcao">
       <span class="nav-icon">📣</span> Chamada à Recepção
     </div>
+    <div class="nav-item" onclick="showPage('playlist')" id="nav-playlist">
+      <span class="nav-icon">🎵</span> Playlist Colaborativa
+    </div>
     <div class="nav-item" onclick="showPage('config')" id="nav-config">
       <span class="nav-icon">⚙️</span> Configurações
     </div>
@@ -395,6 +398,7 @@ const SCOPES = 'user-read-playback-state user-modify-playback-state user-read-cu
 const ELEVEN_API_KEY = 'sk_81e1fecde27aa738245bc3e615f515bc8b4c0fcf266105fa';
 const GOOGLE_TTS_KEY = 'AIzaSyBoXXsM6E91ztV0cBizNMjTI13sdjUGjx0';
 const ROCK_SAMPLE_URL = 'https://cdn.jsdelivr.net/gh/ironjunglecontato/iron-jungle-radio@main/rock-intro.mp3';
+const COLLAB_PLAYLIST_ID = '2Q3ATPP04oGy2W9vm5KiFc';
 const DIAS_SEMANA = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 
 // ── STATE ────────────────────────────────────────────────────────────────────
@@ -761,6 +765,7 @@ function showPage(page) {
   else if (page === 'spots') content.innerHTML = renderSpots();
   else if (page === 'criar') { openModal(); return; }
   else if (page === 'recepcao') renderRecepcao();
+  else if (page === 'playlist') { content.innerHTML = renderPlaylist(); loadPlaylist(); }
   else if (page === 'config') content.innerHTML = renderConfig();
 }
 
@@ -838,6 +843,198 @@ function renderSpotItem(spot, showEdit=false) {
       <button class="btn btn-red btn-sm" onclick="deleteSpot('${spot.id}')">🗑</button>`:''}
     </div>
   </div>`;
+}
+
+// ── PLAYLIST COLABORATIVA ─────────────────────────────────────────────────────
+let playlistTracks = [];
+let playlistMonitorInterval = null;
+let allowedGenres = JSON.parse(localStorage.getItem('ij_genres') || '["rock","metal","alternative","hip-hop","rap","electronic","dance","punk","indie","hard rock","heavy metal","pop rock"]');
+let removedLog = JSON.parse(localStorage.getItem('ij_removed_log') || '[]');
+
+function renderPlaylist() {
+  return `
+  <div class="page-title">🎵 Playlist Colaborativa</div>
+  <div class="page-sub">Monitora e filtra automaticamente as músicas adicionadas pelos alunos.</div>
+
+  <div class="grid-2" style="margin-bottom:16px">
+    <div class="card card-gold">
+      <div class="section-title" style="margin-bottom:4px">Monitoramento Automático</div>
+      <div style="font-size:13px;color:var(--text-dim);margin-bottom:14px">Verifica e remove músicas de gêneros não permitidos a cada 5 minutos.</div>
+      <div class="toggle-row" style="margin-bottom:14px">
+        <div class="toggle ${playlistMonitorInterval?'on':''}" id="monitorToggle" onclick="toggleMonitor()"></div>
+        <span style="font-weight:700" id="monitorLabel">${playlistMonitorInterval?'Monitorando...':'Monitor desativado'}</span>
+      </div>
+      <button class="btn btn-gold btn-full" onclick="checkPlaylistNow()">🔍 Verificar Agora</button>
+    </div>
+    <div class="card">
+      <div class="section-title" style="margin-bottom:12px">Gêneros Permitidos</div>
+      <div id="genresList" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        ${allowedGenres.map(g=>`<span class="badge badge-gold" style="cursor:pointer" onclick="removeGenre('${g}')">${g} ✕</span>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px">
+        <input id="newGenreInput" placeholder="Adicionar gênero..." style="flex:1" onkeydown="if(event.key==='Enter')addGenre()">
+        <button class="btn btn-outline btn-sm" onclick="addGenre()">+ Add</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="flex-between" style="margin-bottom:14px">
+      <div class="section-title" style="margin-bottom:0">Músicas na Playlist</div>
+      <button class="btn btn-dark btn-sm" onclick="loadPlaylist()">🔄 Atualizar</button>
+    </div>
+    <div id="playlistTracksList">
+      <div style="text-align:center;padding:30px;color:var(--text-dim)">⏳ Carregando músicas...</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="flex-between" style="margin-bottom:14px">
+      <div class="section-title" style="margin-bottom:0">🗑 Músicas Removidas</div>
+      <button class="btn btn-dark btn-sm" onclick="clearLog()">Limpar log</button>
+    </div>
+    <div id="removedLogList">
+      ${removedLog.length === 0
+        ? '<div style="text-align:center;padding:20px;color:var(--text-dim)">Nenhuma música removida ainda</div>'
+        : removedLog.slice(0,10).map(r=>`
+          <div class="spot-item">
+            <div class="spot-cover">🚫</div>
+            <div class="spot-info">
+              <div class="spot-name">${r.name}</div>
+              <div class="spot-meta">${r.artist} · Gênero: <span style="color:var(--red)">${r.genre}</span> · ${r.removedAt}</div>
+            </div>
+          </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+async function loadPlaylist() {
+  const el = document.getElementById('playlistTracksList');
+  if (!el) return;
+  el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-dim)">⏳ Carregando...</div>';
+
+  const data = await spotifyFetch(`/playlists/${COLLAB_PLAYLIST_ID}/tracks?limit=50&fields=items(track(id,name,artists,album(images)))`);
+  if (!data || !data.items) {
+    el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--red)">❌ Erro ao carregar playlist. Verifique se o Spotify está conectado.</div>';
+    return;
+  }
+
+  playlistTracks = data.items.filter(i => i.track).map(i => ({
+    id: i.track.id,
+    name: i.track.name,
+    artist: i.track.artists[0]?.name || 'Desconhecido',
+    artistId: i.track.artists[0]?.id,
+    image: i.track.album?.images?.[2]?.url || ''
+  }));
+
+  if (playlistTracks.length === 0) {
+    el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim)">📭 Playlist vazia</div>';
+    return;
+  }
+
+  el.innerHTML = playlistTracks.map(t => `
+    <div class="spot-item" id="track_${t.id}">
+      <div class="spot-cover" style="${t.image?`background-image:url(${t.image});background-size:cover;background-position:center`:''}">
+        ${t.image?'':'🎵'}
+      </div>
+      <div class="spot-info">
+        <div class="spot-name">${t.name}</div>
+        <div class="spot-meta">${t.artist}</div>
+      </div>
+      <button class="btn btn-red btn-sm" onclick="removeTrack('${t.id}','${t.name.replace(/'/g,"\\'")}','${t.artist}','manual')">🗑</button>
+    </div>`).join('');
+}
+
+async function getArtistGenres(artistId) {
+  const data = await spotifyFetch(`/artists/${artistId}`);
+  return data?.genres || [];
+}
+
+function isGenreAllowed(genres) {
+  if (genres.length === 0) return true; // Se não tem gênero, deixa passar
+  return genres.some(g => allowedGenres.some(allowed => g.toLowerCase().includes(allowed.toLowerCase())));
+}
+
+async function checkPlaylistNow() {
+  showToast('🔍 Verificando playlist...', '');
+  await loadPlaylist();
+  if (playlistTracks.length === 0) return;
+
+  let removed = 0;
+  for (const track of playlistTracks) {
+    if (!track.artistId) continue;
+    const genres = await getArtistGenres(track.artistId);
+    if (!isGenreAllowed(genres)) {
+      await removeTrack(track.id, track.name, track.artist, genres[0] || 'desconhecido');
+      removed++;
+      await wait(500);
+    }
+  }
+
+  if (removed === 0) showToast('✅ Nenhuma música removida — playlist OK!', 'success');
+  else showToast(`🗑 ${removed} música(s) removida(s) da playlist!`, 'error');
+  await loadPlaylist();
+}
+
+async function removeTrack(trackId, trackName, artist, genre) {
+  await spotifyFetch(`/playlists/${COLLAB_PLAYLIST_ID}/tracks`, 'DELETE', {
+    tracks: [{ uri: `spotify:track:${trackId}` }]
+  });
+
+  // Log
+  removedLog.unshift({
+    name: trackName,
+    artist,
+    genre,
+    removedAt: new Date().toLocaleString('pt-BR')
+  });
+  if (removedLog.length > 50) removedLog.pop();
+  localStorage.setItem('ij_removed_log', JSON.stringify(removedLog));
+
+  // Remove do DOM
+  const el = document.getElementById('track_' + trackId);
+  if (el) el.remove();
+  showToast(`🗑 "${trackName}" removida (${genre})`, 'error');
+}
+
+function toggleMonitor() {
+  if (playlistMonitorInterval) {
+    clearInterval(playlistMonitorInterval);
+    playlistMonitorInterval = null;
+    showToast('⏹ Monitoramento desativado', '');
+  } else {
+    playlistMonitorInterval = setInterval(checkPlaylistNow, 5 * 60 * 1000);
+    showToast('✅ Monitoramento ativado — verifica a cada 5 min', 'success');
+    checkPlaylistNow();
+  }
+  const toggle = document.getElementById('monitorToggle');
+  const label = document.getElementById('monitorLabel');
+  if (toggle) toggle.classList.toggle('on', !!playlistMonitorInterval);
+  if (label) label.textContent = playlistMonitorInterval ? 'Monitorando...' : 'Monitor desativado';
+}
+
+function addGenre() {
+  const input = document.getElementById('newGenreInput');
+  const genre = input?.value?.trim().toLowerCase();
+  if (!genre) return;
+  if (allowedGenres.includes(genre)) { showToast('⚠️ Gênero já existe!', 'error'); return; }
+  allowedGenres.push(genre);
+  localStorage.setItem('ij_genres', JSON.stringify(allowedGenres));
+  input.value = '';
+  showPage('playlist');
+  showToast('✅ Gênero adicionado!', 'success');
+}
+
+function removeGenre(genre) {
+  allowedGenres = allowedGenres.filter(g => g !== genre);
+  localStorage.setItem('ij_genres', JSON.stringify(allowedGenres));
+  showPage('playlist');
+}
+
+function clearLog() {
+  removedLog = [];
+  localStorage.setItem('ij_removed_log', JSON.stringify(removedLog));
+  showPage('playlist');
 }
 
 // ── AGENDAMENTO ───────────────────────────────────────────────────────────────
