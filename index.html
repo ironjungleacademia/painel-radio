@@ -200,6 +200,38 @@ select option{background:var(--dark2)}
 .grade-add-btn{padding:7px 14px;font-size:12px;white-space:nowrap}
 .cal-btn{width:30px;height:30px;border-radius:6px;background:var(--dark3);border:1px solid var(--dark4);cursor:pointer;color:var(--gold);display:flex;align-items:center;justify-content:center;font-size:16px;transition:all .2s;flex-shrink:0}
 .cal-btn:hover{background:var(--gold-dim)}
+
+/* CONTADOR REGRESSIVO */
+.countdown-wrap{background:linear-gradient(135deg,#1a1200,var(--dark2));border:1px solid var(--gold-dim);border-radius:14px;padding:20px;margin-bottom:16px;text-align:center}
+.countdown-label{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--gold);font-weight:700;margin-bottom:8px}
+.countdown-value{font-family:'Bebas Neue',sans-serif;font-size:56px;letter-spacing:4px;line-height:1;color:var(--gold)}
+.countdown-sub{font-size:12px;color:var(--text-dim);margin-top:4px}
+.countdown-bar{height:6px;background:var(--dark3);border-radius:3px;margin-top:12px;overflow:hidden}
+.countdown-fill{height:100%;background:var(--gold);border-radius:3px;transition:width 1s linear}
+
+/* AGENDA SEMANAL */
+.agenda-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+.agenda-dia{background:var(--dark3);border-radius:10px;padding:10px;border:1px solid var(--dark4);min-height:120px}
+.agenda-dia-nome{font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:1px;color:var(--gold);margin-bottom:8px;text-align:center}
+.agenda-evento{background:var(--dark4);border-radius:6px;padding:5px 8px;margin-bottom:4px;font-size:11px;font-weight:600;border-left:2px solid var(--gold);cursor:pointer}
+.agenda-evento:hover{background:rgba(201,168,76,.1)}
+.agenda-evento-hora{color:var(--gold);font-size:10px}
+.agenda-evento-nome{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.agenda-vazio{text-align:center;color:var(--text-dim);font-size:11px;padding-top:20px}
+
+/* AVISOS */
+.aviso-item{background:var(--dark2);border-radius:12px;padding:16px;margin-bottom:12px;border-left:3px solid var(--gold)}
+.aviso-item.urgente{border-left-color:var(--red)}
+.aviso-item.info{border-left-color:var(--blue)}
+.aviso-titulo{font-weight:700;font-size:16px;margin-bottom:6px}
+.aviso-msg{font-size:14px;color:var(--text-dim);line-height:1.5}
+.aviso-meta{font-size:11px;color:var(--text-dim);margin-top:8px;display:flex;align-items:center;gap:8px}
+
+/* VOLUME TEST */
+.vol-bar{height:24px;background:var(--dark3);border-radius:6px;overflow:hidden;position:relative;margin-bottom:8px}
+.vol-fill{height:100%;border-radius:6px;transition:width .1s}
+.vol-music{background:linear-gradient(to right,var(--green),#81c784)}
+.vol-spot{background:linear-gradient(to right,var(--gold),var(--gold-light))}
 </style>
 </head>
 <body>
@@ -238,6 +270,12 @@ select option{background:var(--dark2)}
     </div>
     <div class="nav-item" onclick="showPage('recepcao')" id="nav-recepcao">
       <span class="nav-icon">📣</span> Chamada à Recepção
+    </div>
+    <div class="nav-item" onclick="showPage('agenda')" id="nav-agenda">
+      <span class="nav-icon">📅</span> Agenda da Semana
+    </div>
+    <div class="nav-item" onclick="showPage('avisos')" id="nav-avisos">
+      <span class="nav-icon">📢</span> Avisos
     </div>
     <div class="nav-item" onclick="showPage('config')" id="nav-config">
       <span class="nav-icon">⚙️</span> Configurações
@@ -663,6 +701,7 @@ async function fetchCurrentTrack() {
   if (track.id !== lastTrackId && lastTrackId !== null && isPlaying) {
     songCount++;
     document.getElementById('songCounter').textContent = songCount;
+    startCountdown();
     if (songCount >= parseInt(settings.interval)) {
       songCount = 0;
       document.getElementById('songCounter').textContent = 0;
@@ -670,6 +709,7 @@ async function fetchCurrentTrack() {
     }
   }
   lastTrackId = track.id;
+  if (lastTrackId && isPlaying && !countdownInterval) startCountdown();
   if (!document.getElementById('spotifyUser').dataset.loaded) {
     const user = await spotifyFetch('/me');
     if (user) { document.getElementById('spotifyUser').textContent = '🟢 ' + (user.display_name || user.id); document.getElementById('spotifyUser').dataset.loaded = '1'; }
@@ -809,7 +849,8 @@ function showPage(page) {
   else if (page === 'spots') content.innerHTML = renderSpots();
   else if (page === 'criar') { openModal(); return; }
   else if (page === 'recepcao') renderRecepcao();
-  else if (page === 'playlist') { content.innerHTML = renderPlaylist(); loadPlaylist(); }
+  else if (page === 'agenda') content.innerHTML = renderAgenda();
+  else if (page === 'avisos') content.innerHTML = renderAvisos();
   else if (page === 'config') content.innerHTML = renderConfig();
 }
 
@@ -826,16 +867,22 @@ function renderDashboard() {
     <div class="stat-card green"><div class="stat-icon-bg">✅</div><div class="stat-label">Spots Ativos</div><div class="stat-value" style="color:var(--green)">${ativos}</div></div>
     <div class="stat-card red"><div class="stat-icon-bg">▶</div><div class="stat-label">Spots Tocados</div><div class="stat-value" style="color:var(--red)">${tocados}</div></div>
   </div>
+  <div class="countdown-wrap" style="margin-bottom:16px">
+    <div class="countdown-label">⏱ Próximo Spot em</div>
+    <div class="countdown-value" id="countdownValue">--:--</div>
+    <div class="countdown-sub" id="countdownSub">Aguardando música...</div>
+    <div class="countdown-bar"><div class="countdown-fill" id="countdownBar" style="width:100%"></div></div>
+  </div>
   <div class="grid-2" style="margin-bottom:16px">
     <div class="card card-gold">
       <div class="section-title">📣 Chamada à Recepção</div>
-      <div style="font-size:14px;color:var(--text-dim);margin-bottom:14px">Toca imediatamente via ElevenLabs, pausando o Spotify.</div>
+      <div style="font-size:14px;color:var(--text-dim);margin-bottom:14px">Toca imediatamente via Google TTS, pausando o Spotify.</div>
       <button class="btn btn-gold btn-full" onclick="showPage('recepcao')">📣 Chamar Aluno ou Professor</button>
     </div>
     <div class="card">
       <div class="section-title">⏰ Spots Agendados</div>
       <div style="font-size:14px;color:var(--text-dim);margin-bottom:14px">${agendados} spot(s) com agendamento ativo.</div>
-      <button class="btn btn-outline btn-full" onclick="showPage('spots')">Ver todos os spots</button>
+      <button class="btn btn-outline btn-full" onclick="showPage('agenda')">📅 Ver Agenda</button>
     </div>
   </div>
   <div class="card">
@@ -1216,6 +1263,30 @@ function renderConfig() {
   </div>
   <div style="display:flex;justify-content:flex-end">
     <button class="btn btn-gold" onclick="saveSettings();showToast('✅ Configurações salvas!','success')">Salvar</button>
+  </div>
+
+  <div class="sep"></div>
+  <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:3px;color:var(--gold);margin-bottom:16px">🔊 Teste de Volume</div>
+  <div class="card" style="margin-bottom:16px">
+    <div class="section-title" style="margin-bottom:4px">Calibrar Volume dos Spots</div>
+    <div style="font-size:13px;color:var(--text-dim);margin-bottom:16px">Toca um tom de teste para comparar com o volume da música do Spotify.</div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;font-weight:700;letter-spacing:1px">VOLUME DO SPOT</div>
+      <div class="vol-bar"><div class="vol-fill vol-spot" id="volTestFill" style="width:0%"></div></div>
+    </div>
+    <button class="btn btn-gold btn-full" id="volTestBtn" onclick="testeVolume()">▶ Tocar Tom de Teste (5 segundos)</button>
+  </div>
+
+  <div class="sep"></div>
+  <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:3px;color:var(--gold);margin-bottom:16px">💾 Backup & Restaurar</div>
+  <div class="card">
+    <div class="section-title" style="margin-bottom:4px">Salvar e Restaurar Configurações</div>
+    <div style="font-size:13px;color:var(--text-dim);margin-bottom:16px">Faça backup dos seus spots e configurações para usar em outro computador.</div>
+    <div style="display:flex;gap:12px">
+      <button class="btn btn-outline" style="flex:1" onclick="exportarBackup()">📥 Exportar Backup</button>
+      <button class="btn btn-dark" style="flex:1" onclick="importarBackup()">📤 Importar Backup</button>
+    </div>
+    <div style="font-size:11px;color:var(--text-dim);margin-top:10px">⚠️ O backup salva nomes e configurações. Os áudios MP3 precisam ser re-uploaded após restaurar.</div>
   </div>`;
 }
 
@@ -1355,7 +1426,8 @@ async function fireRecepcao() {
   if (!audioUrl) { btn.disabled=false; btn.textContent='📣 Chamar Agora'; return; }
 
   await spotifyPause();
-  btn.textContent = '🔊 Tocando...';
+  playBip();
+  await wait(500);
 
   try {
     const audio = new Audio(audioUrl);
@@ -1453,6 +1525,236 @@ function showToast(msg, type='') {
   const el = document.getElementById('toastEl');
   el.textContent = msg; el.className='toast '+type; el.style.display='block';
   clearTimeout(el._t); el._t = setTimeout(()=>el.style.display='none', 3500);
+}
+
+// ── BIP ───────────────────────────────────────────────────────────────────────
+function playBip() {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.frequency.value = 880;
+  osc.type = 'sine';
+  gain.gain.setValueAtTime(0.3, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 0.3);
+  setTimeout(() => ctx.close(), 500);
+}
+
+// ── COUNTDOWN ─────────────────────────────────────────────────────────────────
+let countdownInterval = null;
+let totalSeconds = 0;
+let remainingSeconds = 0;
+
+function startCountdown() {
+  const interval = parseInt(settings.interval) || 3;
+  const currentCount = songCount || 0;
+  const songsLeft = interval - currentCount;
+  totalSeconds = songsLeft * 210; // ~3.5 min por música
+  remainingSeconds = totalSeconds;
+  if (countdownInterval) clearInterval(countdownInterval);
+  countdownInterval = setInterval(() => {
+    remainingSeconds = Math.max(0, remainingSeconds - 1);
+    updateCountdownUI();
+  }, 1000);
+  updateCountdownUI();
+}
+
+function updateCountdownUI() {
+  const el = document.getElementById('countdownValue');
+  const bar = document.getElementById('countdownBar');
+  const sub = document.getElementById('countdownSub');
+  if (!el) return;
+  const mins = Math.floor(remainingSeconds / 60);
+  const secs = remainingSeconds % 60;
+  el.textContent = `${mins}:${secs.toString().padStart(2,'0')}`;
+  const pct = totalSeconds > 0 ? (remainingSeconds / totalSeconds) * 100 : 0;
+  if (bar) bar.style.width = pct + '%';
+  if (sub) sub.textContent = remainingSeconds === 0 ? '⚡ Próximo spot agora!' : `Faltam ${songCount}/${settings.interval} músicas`;
+}
+
+// ── AGENDA DA SEMANA ──────────────────────────────────────────────────────────
+function renderAgenda() {
+  const dias = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+  const hoje = new Date().getDay();
+
+  const eventosPorDia = Array(7).fill(null).map(() => []);
+  spots.forEach(spot => {
+    if (!spot.schedule) return;
+    Object.entries(spot.schedule).forEach(([dia, horarios]) => {
+      (horarios || []).forEach(hora => {
+        eventosPorDia[parseInt(dia)].push({ hora, nome: spot.name, id: spot.id, ativo: spot.active });
+      });
+    });
+    Object.entries(spot.schedule).forEach(([dia, horarios]) => {
+      eventosPorDia[parseInt(dia)].sort((a,b) => a.hora.localeCompare(b.hora));
+    });
+  });
+
+  return `
+  <div class="page-title">📅 Agenda da Semana</div>
+  <div class="page-sub">Visão geral de todos os spots agendados por dia e horário.</div>
+  <div class="agenda-grid">
+    ${dias.map((dia, i) => `
+      <div class="agenda-dia" style="${i===hoje?'border:1px solid var(--gold-dim);background:rgba(201,168,76,.04)':''}">
+        <div class="agenda-dia-nome">${i===hoje?'⭐ ':''  }${dia.substring(0,3).toUpperCase()}</div>
+        ${eventosPorDia[i].length === 0
+          ? '<div class="agenda-vazio">—</div>'
+          : eventosPorDia[i].map(e => `
+            <div class="agenda-evento" onclick="openAgendamento('${e.id}')" style="${!e.ativo?'opacity:.4':''}">
+              <div class="agenda-evento-hora">⏰ ${e.hora}</div>
+              <div class="agenda-evento-nome">${e.nome}</div>
+            </div>`).join('')}
+      </div>`).join('')}
+  </div>
+  <div style="margin-top:16px;font-size:12px;color:var(--text-dim);text-align:center">
+    ⭐ Hoje · Clique em um evento para editar o agendamento
+  </div>`;
+}
+
+// ── AVISOS ────────────────────────────────────────────────────────────────────
+let avisos = JSON.parse(localStorage.getItem('ij_avisos') || '[]');
+
+function renderAvisos() {
+  return `
+  <div class="page-title">📢 Avisos da Academia</div>
+  <div class="page-sub">Gerencie comunicados para exibir no painel.</div>
+  <div class="card" style="margin-bottom:16px">
+    <div class="section-title" style="margin-bottom:14px">Novo Aviso</div>
+    <label class="label">Título</label>
+    <input id="avisoTitulo" placeholder="Ex: Manutenção dos aparelhos" style="margin-bottom:10px">
+    <label class="label">Mensagem</label>
+    <textarea id="avisoMsg" placeholder="Digite o aviso completo..." style="margin-bottom:10px;min-height:80px;resize:vertical"></textarea>
+    <label class="label">Tipo</label>
+    <select id="avisoTipo" style="margin-bottom:14px;max-width:220px">
+      <option value="normal">📢 Normal</option>
+      <option value="urgente">🔴 Urgente</option>
+      <option value="info">ℹ️ Informativo</option>
+    </select>
+    <button class="btn btn-gold btn-full" onclick="addAviso()">📢 Publicar Aviso</button>
+  </div>
+  <div class="section-title" style="margin-bottom:12px">Avisos Publicados (${avisos.length})</div>
+  ${avisos.length === 0
+    ? '<div style="text-align:center;padding:30px;color:var(--text-dim)">📭 Nenhum aviso publicado</div>'
+    : avisos.map(a => `
+      <div class="aviso-item ${a.tipo}">
+        <div class="flex-between">
+          <div class="aviso-titulo">${a.titulo}</div>
+          <button class="btn btn-red btn-sm" onclick="removeAviso('${a.id}')">🗑</button>
+        </div>
+        <div class="aviso-msg">${a.msg}</div>
+        <div class="aviso-meta">
+          <span>🕐 ${a.data}</span>
+          <span class="badge ${a.tipo==='urgente'?'badge-red':a.tipo==='info'?'badge-blue':'badge-gold'}">${a.tipo}</span>
+        </div>
+      </div>`).join('')}`;
+}
+
+function addAviso() {
+  const titulo = document.getElementById('avisoTitulo')?.value?.trim();
+  const msg = document.getElementById('avisoMsg')?.value?.trim();
+  const tipo = document.getElementById('avisoTipo')?.value || 'normal';
+  if (!titulo || !msg) { showToast('⚠️ Preencha título e mensagem!', 'error'); return; }
+  avisos.unshift({ id: Date.now().toString(), titulo, msg, tipo, data: new Date().toLocaleString('pt-BR') });
+  localStorage.setItem('ij_avisos', JSON.stringify(avisos));
+  showToast('✅ Aviso publicado!', 'success');
+  showPage('avisos');
+}
+
+function removeAviso(id) {
+  avisos = avisos.filter(a => a.id !== id);
+  localStorage.setItem('ij_avisos', JSON.stringify(avisos));
+  showPage('avisos');
+}
+
+// ── BACKUP / RESTORE ──────────────────────────────────────────────────────────
+function exportarBackup() {
+  const backup = {
+    versao: '1.0',
+    data: new Date().toISOString(),
+    spots: spots.map(s => ({ ...s, ttsData: null, instrumentalData: null })), // sem áudio por limitação de tamanho
+    settings,
+    avisos
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `iron-jungle-backup-${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('✅ Backup exportado!', 'success');
+}
+
+function importarBackup() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const backup = JSON.parse(ev.target.result);
+        if (!backup.spots) throw new Error('Arquivo inválido');
+        spots = backup.spots;
+        settings = backup.settings || settings;
+        avisos = backup.avisos || [];
+        saveSpots();
+        saveSettings();
+        localStorage.setItem('ij_avisos', JSON.stringify(avisos));
+        showToast(`✅ Backup restaurado! ${spots.length} spots importados.`, 'success');
+        showPage(currentPage);
+      } catch(e) { showToast('❌ Arquivo de backup inválido!', 'error'); }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+// ── TESTE DE VOLUME ───────────────────────────────────────────────────────────
+let volumeTestCtx = null;
+let volumeTestPlaying = false;
+
+async function testeVolume() {
+  if (volumeTestPlaying) {
+    volumeTestCtx?.close();
+    volumeTestCtx = null;
+    volumeTestPlaying = false;
+    document.getElementById('volTestBtn').textContent = '▶ Tocar Tom de Teste';
+    document.getElementById('volTestBtn').className = 'btn btn-gold btn-full';
+    return;
+  }
+  volumeTestPlaying = true;
+  const btn = document.getElementById('volTestBtn');
+  btn.textContent = '⏹ Parar';
+  btn.className = 'btn btn-red btn-full';
+
+  volumeTestCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const osc = volumeTestCtx.createOscillator();
+  const gain = volumeTestCtx.createGain();
+  osc.connect(gain);
+  gain.connect(volumeTestCtx.destination);
+  osc.frequency.value = 440;
+  osc.type = 'sine';
+  gain.gain.value = 0.3;
+  osc.start();
+
+  // Animar medidor
+  const interval = setInterval(() => {
+    const el = document.getElementById('volTestFill');
+    if (!el || !volumeTestPlaying) { clearInterval(interval); return; }
+    const v = 0.6 + Math.sin(Date.now() / 200) * 0.4;
+    el.style.width = (v * 100) + '%';
+  }, 50);
+
+  // Para automaticamente após 5 segundos
+  setTimeout(() => {
+    if (volumeTestPlaying) testeVolume();
+  }, 5000);
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
