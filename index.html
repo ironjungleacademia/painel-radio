@@ -1419,7 +1419,7 @@ function checkMixerReady() {
   if (ttsBlob) document.getElementById('mixerSection').style.display = 'block';
 }
 
-function saveSpot() {
+async function saveSpot() {
   const name = document.getElementById('spotNameInput').value.trim();
   if (!name) { showToast('⚠️ Digite o nome do spot!', 'error'); return; }
   if (!ttsBlob) { showToast('⚠️ Faça upload do áudio do locutor!', 'error'); return; }
