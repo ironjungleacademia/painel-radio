@@ -1362,7 +1362,7 @@ function renderConfig() {
     <div class="section-title" style="margin-bottom:4px">Salvar e Restaurar Configurações</div>
     <div style="font-size:13px;color:var(--text-dim);margin-bottom:16px">Faça backup dos seus spots e configurações para usar em outro computador.</div>
     <div style="display:flex;gap:12px">
-      <button class="btn btn-outline" style="flex:1" onclick="exportarBackup()">📥 Exportar Backup</button>
+      <button class="btn btn-outline" style="flex:1" onclick="exportarBackup().catch(e=>showToast('❌ Erro: '+e.message,'error'))">📥 Exportar Backup</button>
       <button class="btn btn-dark" style="flex:1" onclick="importarBackup()">📤 Importar Backup</button>
     </div>
     <div style="font-size:11px;color:var(--text-dim);margin-top:10px">⚠️ O backup salva nomes e configurações. Os áudios MP3 precisam ser re-uploaded após restaurar.</div>
@@ -1903,19 +1903,29 @@ function limparHistoricoAvisos() {
 }
 
 // ── BACKUP / RESTORE ──────────────────────────────────────────────────────────
-function exportarBackup() {
+async function exportarBackup() {
+  showToast('⏳ Preparando backup...', '');
+
+  // Carregar áudios do IndexedDB para cada spot
+  const spotsComAudio = await Promise.all(spots.map(async s => {
+    let ttsData = s.ttsData || null;
+    let instrumentalData = s.instrumentalData || null;
+
+    // Se não tem ttsData na memória, busca no IndexedDB
+    if (!ttsData) ttsData = await carregarAudio(s.id, 'tts');
+    if (!instrumentalData) instrumentalData = await carregarAudio(s.id, 'instrumental');
+
+    return { ...s, ttsData, instrumentalData };
+  }));
+
   const backup = {
-    versao: '1.1',
+    versao: '1.2',
     data: new Date().toISOString(),
-    spots: spots.map(s => ({
-      ...s,
-      // Preserva URL do GitHub, zera apenas dados base64 locais
-      ttsData: (typeof s.ttsData === 'string' && s.ttsData.startsWith('http')) ? s.ttsData : null,
-      instrumentalData: (typeof s.instrumentalData === 'string' && s.instrumentalData.startsWith('http')) ? s.instrumentalData : null
-    })),
+    spots: spotsComAudio,
     settings,
     avisos: historicaAvisos.map(a => ({...a, audioUrl: null}))
   };
+
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1925,7 +1935,7 @@ function exportarBackup() {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  showToast('✅ Backup exportado!', 'success');
+  showToast('✅ Backup exportado com áudios!', 'success');
 }
 
 function importarBackup() {
