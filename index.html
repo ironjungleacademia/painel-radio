@@ -1383,9 +1383,8 @@ function openModal(id=null) {
   const tj = document.getElementById('tocarJuntoToggle');
   if (tj) tj.classList.remove('on');
   document.getElementById('introDuration').value = '5';
-  document.getElementById('ttsUploadArea').innerHTML = '<div class="upload-icon">🎙️</div><div class="upload-text">Clique para selecionar</div><div class="upload-sub">Arquivo MP3 gerado no ElevenLabs</div>';
-  document.getElementById('ttsUploadArea').classList.remove('upload-done');
-  document.getElementById('instrumentalUploadArea').innerHTML = '<div class="upload-icon">🎸</div><div class="upload-text">Clique para selecionar</div><div class="upload-sub">Arquivo MP3 personalizado</div>';
+  const instrUpload = document.getElementById('instrumentalUploadArea');
+  if (instrUpload) instrUpload.innerHTML = '<div class="upload-icon">🎸</div><div class="upload-text">Clique para selecionar</div><div class="upload-sub">Arquivo MP3 personalizado</div>';
   document.getElementById('customInstrumentalUpload').style.display = 'none';
   document.getElementById('mixerSection').style.display = 'none';
 
