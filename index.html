@@ -1905,9 +1905,14 @@ function limparHistoricoAvisos() {
 // ── BACKUP / RESTORE ──────────────────────────────────────────────────────────
 function exportarBackup() {
   const backup = {
-    versao: '1.0',
+    versao: '1.1',
     data: new Date().toISOString(),
-    spots: spots.map(s => ({ ...s, ttsData: null, instrumentalData: null })),
+    spots: spots.map(s => ({
+      ...s,
+      // Preserva URL do GitHub, zera apenas dados base64 locais
+      ttsData: (typeof s.ttsData === 'string' && s.ttsData.startsWith('http')) ? s.ttsData : null,
+      instrumentalData: (typeof s.instrumentalData === 'string' && s.instrumentalData.startsWith('http')) ? s.instrumentalData : null
+    })),
     settings,
     avisos: historicaAvisos.map(a => ({...a, audioUrl: null}))
   };
@@ -1935,12 +1940,21 @@ function importarBackup() {
       try {
         const backup = JSON.parse(ev.target.result);
         if (!backup.spots) throw new Error('Arquivo inválido');
-        spots = backup.spots;
+        spots = backup.spots.map(s => ({
+          ...s,
+          // Se ttsData é URL do GitHub, mantém. Se null, fica null (precisa re-upload)
+          ttsData: s.ttsData || null,
+          instrumentalData: s.instrumentalData || null
+        }));
         settings = backup.settings || settings;
         historicaAvisos = backup.avisos || [];
         saveSpots();
         saveSettings();
         localStorage.setItem('ij_avisos_hist', JSON.stringify(historicaAvisos));
+        // Salvar URLs no IndexedDB também
+        spots.forEach(s => {
+          if (s.ttsData) salvarAudio(s.id, 'tts', s.ttsData);
+        });
         showToast(`✅ Backup restaurado! ${spots.length} spots importados.`, 'success');
         showPage(currentPage);
       } catch(e) { showToast('❌ Arquivo de backup inválido!', 'error'); }
