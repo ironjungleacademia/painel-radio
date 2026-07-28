@@ -1907,16 +1907,18 @@ function exportarBackup() {
   const backup = {
     versao: '1.0',
     data: new Date().toISOString(),
-    spots: spots.map(s => ({ ...s, ttsData: null, instrumentalData: null })), // sem áudio por limitação de tamanho
+    spots: spots.map(s => ({ ...s, ttsData: null, instrumentalData: null })),
     settings,
-    avisos
+    avisos: historicaAvisos.map(a => ({...a, audioUrl: null}))
   };
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = `iron-jungle-backup-${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.json`;
+  document.body.appendChild(a);
   a.click();
+  document.body.removeChild(a);
   URL.revokeObjectURL(url);
   showToast('✅ Backup exportado!', 'success');
 }
@@ -1935,10 +1937,10 @@ function importarBackup() {
         if (!backup.spots) throw new Error('Arquivo inválido');
         spots = backup.spots;
         settings = backup.settings || settings;
-        avisos = backup.avisos || [];
+        historicaAvisos = backup.avisos || [];
         saveSpots();
         saveSettings();
-        localStorage.setItem('ij_avisos', JSON.stringify(avisos));
+        localStorage.setItem('ij_avisos_hist', JSON.stringify(historicaAvisos));
         showToast(`✅ Backup restaurado! ${spots.length} spots importados.`, 'success');
         showPage(currentPage);
       } catch(e) { showToast('❌ Arquivo de backup inválido!', 'error'); }
