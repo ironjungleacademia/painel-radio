@@ -872,6 +872,8 @@ async function playSpotAudio(spot) {
         musicEl.play();
       }
       const introDur = parseInt(spot.introDuration || 5) * 1000;
+      const fadeTime = introDur === 0 ? 0.5 : introDur / 1000;
+
       if (musicEl) {
         if (introDur === 0) {
           // Sem intro — fade out rápido de 0.5s
@@ -880,16 +882,16 @@ async function playSpotAudio(spot) {
           await wait(500);
         } else {
           await wait(introDur);
-          musicGain.gain.linearRampToValueAtTime(0.08, ctx.currentTime + 1.5);
-          await wait(1500);
+          musicGain.gain.linearRampToValueAtTime(0.08, ctx.currentTime + fadeTime);
+          await wait(fadeTime * 1000);
         }
       }
       ttsEl.play();
       await new Promise(r => { ttsEl.onended = r; setTimeout(r, 30000); });
       if (musicEl && musicGain) {
-        musicGain.gain.linearRampToValueAtTime(0.7, ctx.currentTime + 1);
-        musicGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 2);
-        await wait(2000);
+        musicGain.gain.linearRampToValueAtTime(0.7, ctx.currentTime + fadeTime);
+        musicGain.gain.linearRampToValueAtTime(0, ctx.currentTime + fadeTime * 2);
+        await wait(fadeTime * 2000);
         musicEl.pause();
       }
       ctx.close(); resolve();
@@ -1561,6 +1563,7 @@ async function previewMix() {
   try {
     mixCtx = new (window.AudioContext || window.webkitAudioContext)();
     const introDur = parseInt(document.getElementById('introDuration').value) * 1000;
+    const fadeTime = introDur === 0 ? 0.5 : introDur / 1000;
     const genre = document.getElementById('spotInstrumental').value;
     const sampleUrl = instrumentalBlob || getSampleUrl(genre);
 
@@ -1590,8 +1593,8 @@ async function previewMix() {
       await animMeters(()=>sampleUrl?85:0,()=>0,introDur);
       if(!mixPlaying) return cleanup();
       setTL(1); setMix('🔉','Fade Out...','Reduzindo instrumental...');
-      if(musicGain) musicGain.gain.linearRampToValueAtTime(0.08,mixCtx.currentTime+1.5);
-      await animMeters(t=>(0.85-0.77*t)*100,()=>0,1500);
+      if(musicGain) musicGain.gain.linearRampToValueAtTime(0.08,mixCtx.currentTime+fadeTime);
+      await animMeters(t=>(0.85-0.77*t)*100,()=>0,fadeTime*1000);
     }
     if(!mixPlaying) return cleanup();
 
@@ -1602,10 +1605,10 @@ async function previewMix() {
     if(!mixPlaying) return cleanup();
 
     setTL(3); setMix('🔊','Encerrando...','Instrumental volta e encerra');
-    ttsGain.gain.linearRampToValueAtTime(0,mixCtx.currentTime+0.5);
-    if(musicGain){musicGain.gain.linearRampToValueAtTime(0.7,mixCtx.currentTime+1);musicGain.gain.linearRampToValueAtTime(0,mixCtx.currentTime+2);}
+    ttsGain.gain.linearRampToValueAtTime(0,mixCtx.currentTime+fadeTime);
+    if(musicGain){musicGain.gain.linearRampToValueAtTime(0.7,mixCtx.currentTime+fadeTime);musicGain.gain.linearRampToValueAtTime(0,mixCtx.currentTime+fadeTime*2);}
     setTL(4);
-    await animMeters(t=>t<.5?(t/.5)*70:(1-(t-.5)/.5)*70,t=>t<.25?(1-t/.25)*100:0,2000);
+    await animMeters(t=>t<.5?(t/.5)*70:(1-(t-.5)/.5)*70,t=>t<.25?(1-t/.25)*100:0,fadeTime*2000);
 
     setMix('✅','Preview concluído!','Spot pronto para salvar'); setMeters(0,0);
   } catch(e) { setMix('❌','Erro',e.message); }
