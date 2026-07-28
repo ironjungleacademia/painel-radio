@@ -876,7 +876,7 @@ async function playSpotAudio(spot) {
 
       if (musicEl) {
         if (introDur === 0) {
-          // Sem intro — fade out rápido de 0.5s
+          // Tem trilha mas sem intro — fade out rápido de 0.5s
           musicGain.gain.setValueAtTime(0.85, ctx.currentTime);
           musicGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.5);
           await wait(500);
@@ -886,6 +886,7 @@ async function playSpotAudio(spot) {
           await wait(fadeTime * 1000);
         }
       }
+      // Se não tem trilha, toca locutor imediatamente sem fade
       ttsEl.play();
       await new Promise(r => { ttsEl.onended = r; setTimeout(r, 30000); });
       if (musicEl && musicGain) {
@@ -1584,10 +1585,13 @@ async function previewMix() {
 
     setTL(0); setMix('🎸','Intro Instrumental','Tocando intro...');
     if (introDur === 0) {
-      // Sem intro — fade out rápido 0.5s
-      if(musicEl&&musicGain){musicGain.gain.value=0.85;musicEl.play();musicGain.gain.linearRampToValueAtTime(0,mixCtx.currentTime+0.5);}
-      setMix('🔉','Fade rápido...','0.5 segundos');
-      await animMeters(t=>(0.85-(0.85*t))*100,()=>0,500);
+      // Sem intro — fade out rápido só se tiver trilha
+      if(musicEl&&musicGain&&sampleUrl){
+        musicGain.gain.value=0.85; musicEl.play();
+        musicGain.gain.linearRampToValueAtTime(0,mixCtx.currentTime+0.5);
+        setMix('🔉','Fade rápido...','0.5 segundos');
+        await animMeters(t=>(0.85-(0.85*t))*100,()=>0,500);
+      }
     } else {
       if(musicEl&&musicGain){musicGain.gain.value=0.85;musicEl.play();}
       await animMeters(()=>sampleUrl?85:0,()=>0,introDur);
