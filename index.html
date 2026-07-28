@@ -901,6 +901,7 @@ async function playSpotAudio(spot) {
 }
 
 function getSampleUrl(genre) {
+  if (!genre || genre === '' || genre === 'custom') return null;
   const BASE = 'https://ironjungleacademia.github.io/painel-radio';
   const samples = {
     rock:   ['rock-1.mp3','rock-2.mp3','rock-3.mp3','rock-4.mp3'],
@@ -908,9 +909,8 @@ function getSampleUrl(genre) {
     dance:  [],
     pop:    [],
     hiphop: [],
-    custom: []
   };
-  const lista = samples[genre] || samples['rock'];
+  const lista = samples[genre];
   if (!lista || lista.length === 0) return null;
   const escolhido = lista[Math.floor(Math.random() * lista.length)];
   return `${BASE}/${escolhido}`;
