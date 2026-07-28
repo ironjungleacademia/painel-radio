@@ -1492,10 +1492,10 @@ async function saveSpot() {
 
   if (editingSpotId) {
     const idx = spots.findIndex(s=>s.id===editingSpotId);
-    if (idx !== -1) spots[idx] = { ...spots[idx], name, instrumental, introDuration, tocarJunto: spotTocarJunto };
+    if (idx !== -1) spots[idx] = { ...spots[idx], name, instrumental, introDuration, tocarJunto: spotTocarJunto, ttsData: ttsBlob };
     showToast('✅ Spot atualizado!', 'success');
   } else {
-    spots.push({ id: spotId, name, instrumental, introDuration, tocarJunto: spotTocarJunto, active: true, playCount: 0, schedule: {}, createdAt: new Date().toLocaleDateString('pt-BR') });
+    spots.push({ id: spotId, name, instrumental, introDuration, tocarJunto: spotTocarJunto, ttsData: ttsBlob, active: true, playCount: 0, schedule: {}, createdAt: new Date().toLocaleDateString('pt-BR') });
     showToast('✅ Spot criado!', 'success');
   }
 
@@ -1520,7 +1520,11 @@ function toggleSpot(id) {
 
 function saveSpots() {
   const spotsParaSalvar = spots.map(s => {
-    const { ttsData, instrumentalData, ...rest } = s;
+    const { instrumentalData, ...rest } = s;
+    // Preserva ttsData se for URL (pequena), remove apenas se for base64 (grande)
+    if (rest.ttsData && !rest.ttsData.startsWith('http')) {
+      delete rest.ttsData;
+    }
     return rest;
   });
   localStorage.setItem('ij_spots', JSON.stringify(spotsParaSalvar));
@@ -1906,17 +1910,29 @@ function limparHistoricoAvisos() {
 async function exportarBackup() {
   showToast('⏳ Preparando backup...', '');
 
-  // Carregar áudios do IndexedDB para cada spot
+  // Tentar recuperar áudios de todas as fontes possíveis
   const spotsComAudio = await Promise.all(spots.map(async s => {
     let ttsData = s.ttsData || null;
     let instrumentalData = s.instrumentalData || null;
 
-    // Se não tem ttsData na memória, busca no IndexedDB
+    // 1. Tentar IndexedDB
     if (!ttsData) ttsData = await carregarAudio(s.id, 'tts');
     if (!instrumentalData) instrumentalData = await carregarAudio(s.id, 'instrumental');
 
+    // 2. Tentar localStorage antigo (backup de segurança)
+    if (!ttsData) {
+      try {
+        const oldSpots = JSON.parse(localStorage.getItem('ij_spots_old') || '[]');
+        const oldSpot = oldSpots.find(os => os.id === s.id);
+        if (oldSpot?.ttsData) ttsData = oldSpot.ttsData;
+      } catch(e) {}
+    }
+
     return { ...s, ttsData, instrumentalData };
   }));
+
+  const comAudio = spotsComAudio.filter(s => s.ttsData).length;
+  const semAudio = spotsComAudio.filter(s => !s.ttsData).length;
 
   const backup = {
     versao: '1.2',
@@ -1926,7 +1942,8 @@ async function exportarBackup() {
     avisos: historicaAvisos.map(a => ({...a, audioUrl: null}))
   };
 
-  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  const json = JSON.stringify(backup, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -1935,7 +1952,12 @@ async function exportarBackup() {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  showToast('✅ Backup exportado com áudios!', 'success');
+
+  if (semAudio > 0) {
+    showToast(`⚠️ ${comAudio} spots com áudio, ${semAudio} sem áudio. Edite os spots sem áudio e re-exporte.`, 'error');
+  } else {
+    showToast(`✅ Backup completo! ${comAudio} spots com áudio.`, 'success');
+  }
 }
 
 function importarBackup() {
