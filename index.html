@@ -1397,15 +1397,21 @@ function openModal(id=null) {
       tocarJunto = spot.tocarJunto || false;
       const tj = document.getElementById('tocarJuntoToggle');
       if (tj) tj.classList.toggle('on', tocarJunto);
-      if (spot.ttsData || true) {
+      // Verificar ttsData na memória primeiro (pode ser URL do GitHub)
+      if (spot.ttsData && typeof spot.ttsData === 'string' && spot.ttsData.startsWith('http')) {
+        ttsBlob = spot.ttsData;
+        const nome = spot.ttsData.split('/').pop();
+        const input = document.getElementById('ttsFileName');
+        if (input) { input.value = decodeURIComponent(nome); updateTtsPreview(); }
+      } else {
+        // Tentar IndexedDB como fallback
         carregarAudio(spot.id, 'tts').then(audio => {
           if (audio) {
             ttsBlob = audio;
-            // Se for uma URL do GitHub, mostrar no campo
             if (typeof audio === 'string' && audio.startsWith('http')) {
               const nome = audio.split('/').pop();
               const input = document.getElementById('ttsFileName');
-              if (input) { input.value = nome; updateTtsPreview(); }
+              if (input) { input.value = decodeURIComponent(nome); updateTtsPreview(); }
             } else {
               const preview = document.getElementById('ttsFilePreview');
               if (preview) { preview.innerHTML = '✅ <span style="color:var(--green)">Áudio carregado (arquivo local)</span>'; }
@@ -1413,10 +1419,10 @@ function openModal(id=null) {
             }
           }
         });
-        carregarAudio(spot.id, 'instrumental').then(audio => {
-          if (audio) instrumentalBlob = audio;
-        });
       }
+      carregarAudio(spot.id, 'instrumental').then(audio => {
+        if (audio) instrumentalBlob = audio;
+      });
     }
   }
   document.getElementById('modalCriar').style.display = 'flex';
