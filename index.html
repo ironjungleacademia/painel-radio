@@ -338,12 +338,21 @@ select option{background:var(--dark2)}
       <input type="file" id="instrumentalFile" accept="audio/*" style="display:none" onchange="handleInstrumentalUpload(this)">
     </div>
     <label class="label">Áudio do Locutor (TTS — gerado no ElevenLabs)</label>
-    <div class="upload-area" id="ttsUploadArea" onclick="document.getElementById('ttsFile').click()" style="margin-bottom:14px">
-      <div class="upload-icon">🎙️</div>
-      <div class="upload-text">Clique para selecionar</div>
-      <div class="upload-sub">Arquivo MP3 gerado no ElevenLabs</div>
+    <div style="background:var(--dark3);border-radius:10px;padding:14px;margin-bottom:14px;border:1px solid var(--dark4)">
+      <div style="font-size:13px;color:var(--text-dim);margin-bottom:10px">
+        📁 Digite o nome do arquivo que você subiu no GitHub:
+        <span style="color:var(--gold)">ironjungleacademia.github.io/painel-radio/</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="ttsFileName" placeholder="ex: spot-foco-treino.mp3"
+          oninput="updateTtsPreview()"
+          style="flex:1">
+        <button class="btn btn-dark btn-sm" onclick="testTtsAudio()" title="Testar áudio">▶</button>
+      </div>
+      <div id="ttsFilePreview" style="font-size:11px;margin-top:8px;color:var(--text-dim)">
+        Digite o nome do arquivo acima
+      </div>
     </div>
-    <input type="file" id="ttsFile" accept="audio/*" style="display:none" onchange="handleTtsUpload(this)">
     <label class="label">Duração da Intro Instrumental</label>
     <select id="introDuration" style="margin-bottom:14px">
       <option value="0">Sem intro (0 segundos)</option>
@@ -1363,6 +1372,9 @@ function renderConfig() {
 // ── SPOT CRUD ─────────────────────────────────────────────────────────────────
 function openModal(id=null) {
   editingSpotId = id;
+  document.getElementById('ttsFileName') && (document.getElementById('ttsFileName').value = '');
+  const ttsPreview = document.getElementById('ttsFilePreview');
+  if (ttsPreview) { ttsPreview.textContent = 'Digite o nome do arquivo acima'; ttsPreview.style.color = 'var(--text-dim)'; }
   ttsBlob = null; instrumentalBlob = null;
   document.getElementById('modalTitleText').textContent = id ? 'EDITAR SPOT' : 'CRIAR SPOT';
   document.getElementById('spotNameInput').value = '';
@@ -1387,13 +1399,19 @@ function openModal(id=null) {
       const tj = document.getElementById('tocarJuntoToggle');
       if (tj) tj.classList.toggle('on', tocarJunto);
       if (spot.ttsData || true) {
-        // Tentar carregar do IndexedDB
         carregarAudio(spot.id, 'tts').then(audio => {
           if (audio) {
             ttsBlob = audio;
-            document.getElementById('ttsUploadArea').innerHTML = '<div class="upload-icon">✅</div><div class="upload-text" style="color:var(--green)">Áudio carregado</div><div class="upload-sub">Clique para substituir</div>';
-            document.getElementById('ttsUploadArea').classList.add('upload-done');
-            checkMixerReady();
+            // Se for uma URL do GitHub, mostrar no campo
+            if (typeof audio === 'string' && audio.startsWith('http')) {
+              const nome = audio.split('/').pop();
+              const input = document.getElementById('ttsFileName');
+              if (input) { input.value = nome; updateTtsPreview(); }
+            } else {
+              const preview = document.getElementById('ttsFilePreview');
+              if (preview) { preview.innerHTML = '✅ <span style="color:var(--green)">Áudio carregado (arquivo local)</span>'; }
+              checkMixerReady();
+            }
           }
         });
         carregarAudio(spot.id, 'instrumental').then(audio => {
@@ -1417,16 +1435,33 @@ function closeModal() {
   editingSpotId = null;
 }
 
-function handleTtsUpload(input) {
-  const file = input.files[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    ttsBlob = e.target.result;
-    document.getElementById('ttsUploadArea').innerHTML = `<div class="upload-icon">✅</div><div class="upload-text" style="color:var(--green)">${file.name}</div><div class="upload-sub">Clique para substituir</div>`;
-    document.getElementById('ttsUploadArea').classList.add('upload-done');
-    checkMixerReady();
-  };
-  reader.readAsDataURL(file);
+const GITHUB_BASE = 'https://ironjungleacademia.github.io/painel-radio';
+
+function updateTtsPreview() {
+  const nome = document.getElementById('ttsFileName')?.value?.trim();
+  const preview = document.getElementById('ttsFilePreview');
+  if (!preview) return;
+  if (!nome) {
+    preview.textContent = 'Digite o nome do arquivo acima';
+    preview.style.color = 'var(--text-dim)';
+    ttsBlob = null;
+    return;
+  }
+  const url = `${GITHUB_BASE}/${nome}`;
+  ttsBlob = url;
+  preview.innerHTML = `✅ <span style="color:var(--green)">${url}</span>`;
+  checkMixerReady();
+}
+
+async function testTtsAudio() {
+  const nome = document.getElementById('ttsFileName')?.value?.trim();
+  if (!nome) { showToast('⚠️ Digite o nome do arquivo!', 'error'); return; }
+  const url = `${GITHUB_BASE}/${nome}`;
+  try {
+    const audio = new Audio(url);
+    audio.play();
+    showToast('▶ Testando áudio...', 'success');
+  } catch(e) { showToast('❌ Erro ao tocar: ' + e.message, 'error'); }
 }
 
 function handleInstrumentalUpload(input) {
@@ -1447,7 +1482,10 @@ function checkMixerReady() {
 async function saveSpot() {
   const name = document.getElementById('spotNameInput').value.trim();
   if (!name) { showToast('⚠️ Digite o nome do spot!', 'error'); return; }
-  if (!ttsBlob) { showToast('⚠️ Faça upload do áudio do locutor!', 'error'); return; }
+  // Pegar URL do TTS do campo de nome
+  const ttsNome = document.getElementById('ttsFileName')?.value?.trim();
+  if (!ttsNome && !ttsBlob) { showToast('⚠️ Digite o nome do arquivo de áudio!', 'error'); return; }
+  if (ttsNome) ttsBlob = `${GITHUB_BASE}/${ttsNome}`;
   const instrumental = document.getElementById('spotInstrumental').value;
   const introDuration = document.getElementById('introDuration').value;
   const spotId = editingSpotId || Date.now().toString();
