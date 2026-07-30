@@ -448,7 +448,24 @@ const DIAS_SEMANA = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 
 // ── STATE ────────────────────────────────────────────────────────────────────
 let accessToken = null;
-// ── INDEXEDDB PARA ÁUDIOS ─────────────────────────────────────────────────────
+let globalAudioCtx = null;
+
+function getAudioContext() {
+  if (!globalAudioCtx || globalAudioCtx.state === 'closed') {
+    globalAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return globalAudioCtx;
+}
+
+// Criar AudioContext na primeira interação do usuário
+document.addEventListener('click', () => {
+  if (!globalAudioCtx) {
+    globalAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (globalAudioCtx.state === 'suspended') {
+    globalAudioCtx.resume();
+  }
+}, { once: false });
 let db = null;
 
 async function initDB() {
@@ -887,8 +904,10 @@ async function playSpotAudio(spot) {
 
       if (!ttsData) { await wait(2000); resolve(); return; }
 
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = getAudioContext();
+      await ctx.resume();
       const ttsEl = new Audio(ttsData);
+      ttsEl.crossOrigin = 'anonymous';
       const ttsSrc = ctx.createMediaElementSource(ttsEl);
       const ttsGain = ctx.createGain();
       ttsSrc.connect(ttsGain); ttsGain.connect(ctx.destination);
@@ -931,7 +950,8 @@ async function playSpotAudio(spot) {
         await wait(fadeTime * 2000);
         musicEl.pause();
       }
-      ctx.close(); resolve();
+      ctx.destination.disconnect && null; // ctx global — não fechar
+      resolve();
     } catch(e) { await wait(3000); resolve(); }
   });
 }
