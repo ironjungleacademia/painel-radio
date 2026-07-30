@@ -763,14 +763,21 @@ async function fetchCurrentTrack() {
   if (track.album?.images?.[0]) {
     document.getElementById('npCover').innerHTML = `<img src="${track.album.images[0].url}" style="width:100%;height:100%;border-radius:8px;object-fit:cover">`;
   }
-  if (track.id !== lastTrackId && lastTrackId !== null && isPlaying) {
-    songCount++;
-    document.getElementById('songCounter').textContent = songCount;
-    startCountdown();
-    if (songCount >= parseInt(settings.interval)) {
-      songCount = 0;
-      document.getElementById('songCounter').textContent = 0;
-      triggerAutoSpot();
+  if (track.id !== lastTrackId && isPlaying) {
+    if (lastTrackId !== null) {
+      songCount++;
+      document.getElementById('songCounter').textContent = songCount;
+      startCountdown();
+      if (songCount > parseInt(settings.interval)) {
+        songCount = 1;
+        document.getElementById('songCounter').textContent = 1;
+        triggerAutoSpot();
+      }
+    } else {
+      // Primeira música detectada
+      songCount = 1;
+      document.getElementById('songCounter').textContent = songCount;
+      startCountdown();
     }
   }
   lastTrackId = track.id;
@@ -818,7 +825,12 @@ function checkScheduledSpots() {
 
 // ── AUTO SPOT ─────────────────────────────────────────────────────────────────
 async function triggerAutoSpot() {
-  const activeSpots = spots.filter(s => s.active && !s.scheduleActive);
+  // Excluir spots que têm agendamentos configurados
+  const activeSpots = spots.filter(s => {
+    if (!s.active) return false;
+    const hasSchedule = Object.values(s.schedule || {}).some(times => times && times.length > 0);
+    return !hasSchedule;
+  });
   if (activeSpots.length === 0) return;
   const spot = activeSpots[Math.floor(Math.random() * activeSpots.length)];
   showToast('🎙️ Tocando spot: ' + spot.name, 'success');
