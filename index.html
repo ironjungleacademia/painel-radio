@@ -498,11 +498,11 @@ let spots = JSON.parse(localStorage.getItem('ij_spots') || '[]');
 let settings = JSON.parse(localStorage.getItem('ij_settings') || '{"interval":3,"volume":"Normal"}');
 let elevenVoices = [];
 let songCount = parseInt(localStorage.getItem('ij_songCount') || '0');
+let lastTrackId = localStorage.getItem('ij_lastTrackId') || null;
 let currentPage = 'dashboard';
 let isSpotPlaying = false;
 let spotifyPolling = null;
 let schedulerInterval = null;
-let lastTrackId = null;
 let isPlaying = true;
 let mixCtx = null;
 let mixPlaying = false;
@@ -759,8 +759,10 @@ async function fetchCurrentTrack() {
   }
   if (track.id !== lastTrackId && isPlaying) {
     if (lastTrackId !== null) {
+      // Mudança real de música
       songCount++;
       localStorage.setItem('ij_songCount', songCount);
+      localStorage.setItem('ij_lastTrackId', track.id);
       document.getElementById('songCounter').textContent = songCount;
       if (songCount > parseInt(settings.interval)) {
         songCount = 1;
@@ -769,9 +771,19 @@ async function fetchCurrentTrack() {
         triggerAutoSpot();
       }
     } else {
-      if (songCount === 0) songCount = 1;
-      localStorage.setItem('ij_songCount', songCount);
-      document.getElementById('songCounter').textContent = songCount;
+      // Primeira detecção após reload
+      const savedTrackId = localStorage.getItem('ij_lastTrackId');
+      if (savedTrackId === track.id) {
+        // Mesma música que estava tocando antes do reload — mantém contador
+        document.getElementById('songCounter').textContent = songCount;
+      } else {
+        // Música diferente — conta como nova
+        if (songCount === 0) songCount = 1;
+        else songCount++;
+        localStorage.setItem('ij_songCount', songCount);
+        localStorage.setItem('ij_lastTrackId', track.id);
+        document.getElementById('songCounter').textContent = songCount;
+      }
     }
   }
   lastTrackId = track.id;
