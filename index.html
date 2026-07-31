@@ -434,7 +434,12 @@ select option{background:var(--dark2)}
 </div>
 
 <div id="toastEl" class="toast" style="display:none"></div>
-
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL = 'https://uxbicgzdjdybktejcssj.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV4YmljZ3pkamR5Ymt0ZWpjc3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU1MjMzMTEsImV4cCI6MjEwMTA5OTMxMX0.TEWvfjuh82RCZRW_HvQL7LpDRvbpA-J5_13MylXlYKk';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+</script>
 <script>
 // ── CONFIG ──────────────────────────────────────────────────────────────────
 const CLIENT_ID = 'b631bc37b95d473b8cf42f29c98ff818';
@@ -545,7 +550,15 @@ async function getClientCredToken() {
     return clientCredToken;
   } catch(e) { console.error('Erro client credentials:', e); return null; }
 }
-
+async function salvarTokenCatalogoNoSupabase() {
+  const token = await getClientCredToken();
+  if (!token) return;
+  const expiraEm = new Date(Date.now() + 55 * 60 * 1000).toISOString(); // expira em ~55min (margem de segurança)
+  await supabaseClient.from('config').upsert([
+    { chave: 'catalog_token', valor: token },
+    { chave: 'catalog_token_expira', valor: expiraEm }
+  ]);
+}
 async function spotifyPublicFetch(endpoint) {
   if (!clientCredToken) await getClientCredToken();
   try {
@@ -729,6 +742,8 @@ async function checkAuth() {
     startScheduler();
     fetchCurrentTrack();
     fetchElevenVoices();
+    salvarTokenCatalogoNoSupabase();
+    setInterval(salvarTokenCatalogoNoSupabase, 50 * 60 * 1000); // renova a cada 50 min
   }
 }
 
@@ -823,7 +838,7 @@ function startPolling() { spotifyPolling = setInterval(fetchCurrentTrack, 3000);
 function stopPolling()  { if (spotifyPolling) clearInterval(spotifyPolling); }
 
 // ── SCHEDULER ─────────────────────────────────────────────────────────────────
-function startScheduler() {
+function () {
   schedulerInterval = setInterval(checkScheduledSpots, 30000);
 }
 function stopScheduler() { if (schedulerInterval) clearInterval(schedulerInterval); }
