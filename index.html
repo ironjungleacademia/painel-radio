@@ -838,7 +838,7 @@ function startPolling() { spotifyPolling = setInterval(fetchCurrentTrack, 3000);
 function stopPolling()  { if (spotifyPolling) clearInterval(spotifyPolling); }
 
 // ── SCHEDULER ─────────────────────────────────────────────────────────────────
-function () {
+function startScheduler() {
   schedulerInterval = setInterval(checkScheduledSpots, 30000);
 }
 function stopScheduler() { if (schedulerInterval) clearInterval(schedulerInterval); }
