@@ -301,7 +301,7 @@ async function buscarMusica() {
     ultimosResultados = tracks.map(t => {
       const artistId = t.artists[0]?.id;
       const genres = genresByArtist[artistId] || [];
-      const permitido = genres.length === 0 || genres.some(g => allowedGenres.some(a => g.toLowerCase().includes(a)));
+      const permitido = genres.length > 0 && genres.some(g => allowedGenres.some(a => g.toLowerCase().includes(a)));
       return {
         id: t.id,
         nome: t.name,
