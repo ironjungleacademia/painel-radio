@@ -268,7 +268,7 @@ async function buscarMusica() {
   document.getElementById('resultsList').innerHTML = '<div class="empty-state">Buscando...</div>';
 
   try {
-    const res = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&market=BR&limit=12`, {
+    const res = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&market=BR&limit=10`, {
       headers: { 'Authorization': 'Bearer ' + catalogToken }
     });
     if (res.status === 401) {
@@ -281,17 +281,22 @@ async function buscarMusica() {
     let tracks = data.tracks?.items || [];
 
     // Filtrar por gênero permitido
+    // Nota: a rota de buscar vários artistas de uma vez (GET /artists?ids=...) foi
+    // removida pela Spotify em fev/2026 para apps em modo de desenvolvimento.
+    // Por isso buscamos o gênero de cada artista individualmente (GET /artists/{id}).
     const artistIds = [...new Set(tracks.map(t => t.artists[0]?.id).filter(Boolean))];
     let genresByArtist = {};
-    if (artistIds.length > 0) {
-      const resArt = await fetch(`https://api.spotify.com/v1/artists?ids=${artistIds.join(',')}`, {
-        headers: { 'Authorization': 'Bearer ' + catalogToken }
-      });
-      if (resArt.ok) {
-        const dataArt = await resArt.json();
-        (dataArt.artists || []).forEach(a => { if (a) genresByArtist[a.id] = a.genres || []; });
-      }
-    }
+    await Promise.all(artistIds.map(async id => {
+      try {
+        const resArt = await fetch(`https://api.spotify.com/v1/artists/${id}`, {
+          headers: { 'Authorization': 'Bearer ' + catalogToken }
+        });
+        if (resArt.ok) {
+          const a = await resArt.json();
+          genresByArtist[id] = a.genres || [];
+        }
+      } catch(e) {}
+    }));
 
     ultimosResultados = tracks.map(t => {
       const artistId = t.artists[0]?.id;
