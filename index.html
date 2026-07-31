@@ -559,25 +559,37 @@ async function salvarTokenCatalogoNoSupabase() {
     { chave: 'catalog_token_expira', valor: expiraEm }
   ]);
 }
-  async function enviarPedidosParaFila() {
-  const { data: pendentes, error } = await supabaseClient
-    .from('pedidos')
-    .select('*')
-    .eq('status', 'pendente')
-    .order('criado_em', { ascending: true });
+  let enviandoPedidos = false;
+async function enviarPedidosParaFila() {
+  if (enviandoPedidos) return; // evita rodadas sobrepostas
+  enviandoPedidos = true;
+  try {
+    const { data: pendentes, error } = await supabaseClient
+      .from('pedidos')
+      .select('*')
+      .eq('status', 'pendente')
+      .order('criado_em', { ascending: true });
 
-  if (error || !pendentes || pendentes.length === 0) return;
+    if (error || !pendentes || pendentes.length === 0) return;
 
-  for (const pedido of pendentes) {
-    const uri = 'spotify:track:' + pedido.spotify_track_id;
-    const resultado = await spotifyFetch('/me/player/queue?uri=' + encodeURIComponent(uri), 'POST');
-    if (resultado !== null) {
-      await supabaseClient
-        .from('pedidos')
-        .update({ status: 'enviado', enviado_em: new Date().toISOString() })
-        .eq('id', pedido.id);
-      showToast('🎵 Pedido enviado à fila: ' + pedido.musica_nome, 'success');
+    for (const pedido of pendentes) {
+      const uri = 'spotify:track:' + pedido.spotify_track_id;
+      const resultado = await spotifyFetch('/me/player/queue?uri=' + encodeURIComponent(uri), 'POST');
+      if (resultado !== null) {
+        const { error: erroUpdate } = await supabaseClient
+          .from('pedidos')
+          .update({ status: 'enviado', enviado_em: new Date().toISOString() })
+          .eq('id', pedido.id);
+        if (erroUpdate) {
+          console.error('Erro ao marcar pedido como enviado:', erroUpdate);
+          showToast('⚠️ Pedido enviado mas houve erro ao atualizar status: ' + pedido.musica_nome, 'error');
+        } else {
+          showToast('🎵 Pedido enviado à fila: ' + pedido.musica_nome, 'success');
+        }
+      }
     }
+  } finally {
+    enviandoPedidos = false;
   }
 }
 async function spotifyPublicFetch(endpoint) {
