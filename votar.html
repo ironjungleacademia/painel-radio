@@ -150,6 +150,7 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let currentUser = null;
 let catalogToken = null;
 let allowedGenres = [];
+let artistasBloqueados = [];
 let podeVotarAgora = false;
 let motivoBloqueio = '';
 let queuePollInterval = null;
@@ -216,6 +217,7 @@ async function carregarConfig() {
   const expira = map.catalog_token_expira ? new Date(map.catalog_token_expira) : null;
   if (expira && expira.getTime() < Date.now()) catalogToken = null;
   allowedGenres = (map.generos_permitidos || '').split(',').map(g => g.trim().toLowerCase()).filter(Boolean);
+  artistasBloqueados = (map.artistas_bloqueados || '').split(',').map(a => a.trim().toLowerCase()).filter(Boolean);
 }
 
 // ── REGRA DA FILA JUSTA ─────────────────────────────────────────────────────
@@ -300,8 +302,11 @@ async function buscarMusica() {
 
     ultimosResultados = tracks.map(t => {
       const artistId = t.artists[0]?.id;
+      const nomeArtista = (t.artists[0]?.name || '').toLowerCase();
       const genres = genresByArtist[artistId] || [];
-      const permitido = genres.length > 0 && genres.some(g => allowedGenres.some(a => g.toLowerCase().includes(a)));
+      const bloqueadoPorNome = artistasBloqueados.some(a => nomeArtista.includes(a));
+      const permitidoPorGenero = genres.length === 0 || genres.some(g => allowedGenres.some(a => g.toLowerCase().includes(a)));
+      const permitido = permitidoPorGenero && !bloqueadoPorNome;
       return {
         id: t.id,
         nome: t.name,
