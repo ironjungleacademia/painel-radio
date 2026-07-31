@@ -559,6 +559,27 @@ async function salvarTokenCatalogoNoSupabase() {
     { chave: 'catalog_token_expira', valor: expiraEm }
   ]);
 }
+  async function enviarPedidosParaFila() {
+  const { data: pendentes, error } = await supabaseClient
+    .from('pedidos')
+    .select('*')
+    .eq('status', 'pendente')
+    .order('criado_em', { ascending: true });
+
+  if (error || !pendentes || pendentes.length === 0) return;
+
+  for (const pedido of pendentes) {
+    const uri = 'spotify:track:' + pedido.spotify_track_id;
+    const resultado = await spotifyFetch('/me/player/queue?uri=' + encodeURIComponent(uri), 'POST');
+    if (resultado !== null) {
+      await supabaseClient
+        .from('pedidos')
+        .update({ status: 'enviado', enviado_em: new Date().toISOString() })
+        .eq('id', pedido.id);
+      showToast('🎵 Pedido enviado à fila: ' + pedido.musica_nome, 'success');
+    }
+  }
+}
 async function spotifyPublicFetch(endpoint) {
   if (!clientCredToken) await getClientCredToken();
   try {
@@ -744,6 +765,8 @@ async function checkAuth() {
     fetchElevenVoices();
     salvarTokenCatalogoNoSupabase();
     setInterval(salvarTokenCatalogoNoSupabase, 50 * 60 * 1000); // renova a cada 50 min
+    enviarPedidosParaFila();
+    setInterval(enviarPedidosParaFila, 10 * 1000); // checa pedidos dos alunos a cada 10s
   }
 }
 
