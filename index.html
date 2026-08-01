@@ -598,6 +598,28 @@ async function enviarPedidosParaFila() {
     enviandoPedidos = false;
   }
 }
+
+// ── PUBLICAR FILA REAL DA SPOTIFY (para os alunos verem no votar.html) ──────
+async function publicarFilaAtual() {
+  const data = await spotifyFetch('/me/player/queue');
+  if (!data) return;
+
+  const tocando = data.currently_playing ? {
+    nome: data.currently_playing.name,
+    artista: (data.currently_playing.artists || []).map(a => a.name).join(', '),
+    capa: data.currently_playing.album?.images?.[2]?.url || data.currently_playing.album?.images?.[0]?.url || ''
+  } : null;
+
+  const proximas = (data.queue || []).slice(0, 8).map(t => ({
+    nome: t.name,
+    artista: (t.artists || []).map(a => a.name).join(', '),
+    capa: t.album?.images?.[2]?.url || t.album?.images?.[0]?.url || ''
+  }));
+
+  await supabaseClient.from('config').upsert([
+    { chave: 'fila_publica', valor: JSON.stringify({ tocando, proximas, atualizado_em: new Date().toISOString() }) }
+  ]);
+}
 async function spotifyPublicFetch(endpoint) {
   if (!clientCredToken) await getClientCredToken();
   try {
@@ -785,6 +807,8 @@ async function checkAuth() {
     setInterval(salvarTokenCatalogoNoSupabase, 50 * 60 * 1000); // renova a cada 50 min
     enviarPedidosParaFila();
     setInterval(enviarPedidosParaFila, 10 * 1000); // checa pedidos dos alunos a cada 10s
+    publicarFilaAtual();
+    setInterval(publicarFilaAtual, 10 * 1000); // publica a fila real da Spotify para os alunos verem
   }
 }
 
