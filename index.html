@@ -44,6 +44,8 @@ body{font-family:'Rajdhani',sans-serif;background:var(--black);color:var(--text)
 .np-play:hover{background:var(--gold-light)}
 .np-nav{background:var(--dark3);color:var(--text)}
 .np-nav:hover{background:var(--dark4)}
+.np-block{background:var(--dark3);color:var(--red);font-size:15px}
+.np-block:hover{background:var(--red);color:#fff}
 .np-counter{background:var(--dark3);border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;text-align:center;flex-shrink:0}
 .np-counter span{color:var(--gold);font-family:'Bebas Neue',sans-serif;font-size:20px}
 
@@ -302,6 +304,7 @@ select option{background:var(--dark2)}
         <button class="np-btn np-nav" onclick="spotifyPrev()" title="Anterior">⏮</button>
         <button class="np-btn np-play" id="playPauseBtn" onclick="togglePlayPause()">⏸</button>
         <button class="np-btn np-nav" onclick="spotifyNext()" title="Próxima">⏭</button>
+        <button class="np-btn np-block" onclick="bloquearMusicaAtual()" title="Bloquear esta música e pular">🚫</button>
       </div>
     </div>
   </div>
@@ -812,6 +815,7 @@ async function fetchCurrentTrack() {
   if (!data || !data.item) {
     document.getElementById('npTitle').textContent = 'Nenhuma música tocando';
     document.getElementById('npArtist').textContent = 'Abra o Spotify no computador';
+    musicaAtual = null;
     document.getElementById('npFill').style.width = '0%';
     document.getElementById('npCover').textContent = '🎵';
     document.getElementById('playPauseBtn').textContent = '▶';
@@ -819,6 +823,7 @@ async function fetchCurrentTrack() {
   }
   const track = data.item;
   isPlaying = data.is_playing;
+  musicaAtual = { nome: track.name, artista: track.artists[0]?.name || '', trackId: track.id };
   document.getElementById('playPauseBtn').textContent = isPlaying ? '⏸' : '▶';
   document.getElementById('npTitle').textContent = track.name;
   document.getElementById('npArtist').textContent = track.artists.map(a=>a.name).join(', ');
@@ -1993,6 +1998,11 @@ async function renderRestricoes() {
   const content = document.getElementById('pageContent');
   content.innerHTML = '<div class="page-title">Restrições de Conteúdo</div><div class="page-sub">Carregando...</div>';
   await carregarRestricoes();
+  await carregarBanidos();
+  const recentes = await carregarAlunosRecentes();
+  const agora = Date.now();
+  const banidosAtivos = alunosBanidos.filter(b => new Date(b.banido_ate).getTime() > agora);
+  const idsBanidos = banidosAtivos.map(b => b.aluno_google_id);
   content.innerHTML = `
   <div class="page-title">🚫 Restrições de Conteúdo</div>
   <div class="page-sub">Controla o que os alunos podem pedir na página de votação.</div>
@@ -2019,6 +2029,45 @@ async function renderRestricoes() {
         <button class="btn btn-outline btn-sm" onclick="adicionarRestricaoArtista()">+ Add</button>
       </div>
     </div>
+  </div>
+
+  <div class="sep"></div>
+  <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:3px;color:var(--gold);margin-bottom:6px">👤 ALUNOS</div>
+  <div style="font-size:13px;color:var(--text-dim);margin-bottom:16px">Banir alunos que insistem em pedir músicas fora das regras da academia.</div>
+
+  ${banidosAtivos.length > 0 ? `
+  <div class="card" style="margin-bottom:16px;border-color:var(--red)">
+    <div class="section-title" style="margin-bottom:12px;color:var(--red)">🔒 Banidos no Momento</div>
+    ${banidosAtivos.map(b => {
+      const restam = Math.ceil((new Date(b.banido_ate).getTime() - agora) / (24*60*60*1000));
+      return `<div class="spot-item">
+        <div class="spot-cover">🔒</div>
+        <div class="spot-info">
+          <div class="spot-name">${b.aluno_nome}</div>
+          <div class="spot-meta">Liberado em ${restam} dia(s) · ${new Date(b.banido_ate).toLocaleDateString('pt-BR')}</div>
+        </div>
+        <button class="btn btn-green btn-sm" onclick="desbanirAluno('${b.aluno_google_id}')">✓ Liberar</button>
+      </div>`;
+    }).join('')}
+  </div>` : ''}
+
+  <div class="card">
+    <div class="section-title" style="margin-bottom:12px">Alunos que Pediram Recentemente</div>
+    ${recentes.length === 0
+      ? '<div style="text-align:center;padding:24px;color:var(--text-dim)">📭 Nenhum pedido ainda</div>'
+      : recentes.map(p => idsBanidos.includes(p.aluno_google_id) ? '' : `
+        <div class="spot-item">
+          <div class="spot-cover">🏋️</div>
+          <div class="spot-info">
+            <div class="spot-name">${p.aluno_nome}</div>
+            <div class="spot-meta">Último pedido: ${p.musica_nome} — ${p.artista_nome}</div>
+          </div>
+          <div class="spot-actions">
+            <button class="btn btn-dark btn-sm" onclick="banirAluno('${p.aluno_google_id}','${p.aluno_nome.replace(/'/g,"\\'")}',1)">1 dia</button>
+            <button class="btn btn-dark btn-sm" onclick="banirAluno('${p.aluno_google_id}','${p.aluno_nome.replace(/'/g,"\\'")}',7)">7 dias</button>
+            <button class="btn btn-red btn-sm" onclick="banirAluno('${p.aluno_google_id}','${p.aluno_nome.replace(/'/g,"\\'")}',30)">30 dias</button>
+          </div>
+        </div>`).join('')}
   </div>
   <div style="font-size:11px;color:var(--text-dim);margin-top:16px">⚠️ Mudanças aqui valem para novas buscas dos alunos a partir de agora — não afeta pedidos já feitos.</div>`;
 }
@@ -2059,6 +2108,60 @@ async function removerRestricaoArtista(artista) {
   restricaoArtistas = restricaoArtistas.filter(a => a !== artista);
   await salvarRestricaoArtistas();
   renderRestricoes();
+}
+
+// ── BLOQUEIO RÁPIDO DA MÚSICA ATUAL ──────────────────────────────────────────
+let musicaAtual = null;
+
+async function bloquearMusicaAtual() {
+  if (!musicaAtual || !musicaAtual.artista) {
+    showToast('⚠️ Nenhuma música tocando para bloquear!', 'error');
+    return;
+  }
+  const artista = musicaAtual.artista;
+  const nomeMusica = musicaAtual.nome;
+  if (!confirm(`Bloquear o artista "${artista}"?\n\nOs alunos não poderão mais pedir músicas desse artista.`)) return;
+
+  await carregarRestricoes();
+  const artistaLower = artista.toLowerCase();
+  if (!restricaoArtistas.includes(artistaLower)) {
+    restricaoArtistas.push(artistaLower);
+    await salvarRestricaoArtistas();
+  }
+
+  await spotifyNext();
+  showToast(`🚫 "${artista}" bloqueado — pulando "${nomeMusica}"`, 'error');
+  if (currentPage === 'restricoes') renderRestricoes();
+}
+
+// ── BANIMENTO DE ALUNOS ───────────────────────────────────────────────────────
+let alunosBanidos = [];
+
+async function carregarBanidos() {
+  const { data } = await supabaseClient.from('banidos').select('*').order('banido_ate', { ascending: false });
+  alunosBanidos = data || [];
+}
+
+async function banirAluno(googleId, nome, dias) {
+  const ate = new Date(Date.now() + dias * 24 * 60 * 60 * 1000).toISOString();
+  await supabaseClient.from('banidos').upsert([{ aluno_google_id: googleId, aluno_nome: nome, banido_ate: ate }]);
+  showToast(`🚫 ${nome} banido por ${dias} dia(s)`, 'error');
+  renderRestricoes();
+}
+
+async function desbanirAluno(googleId) {
+  await supabaseClient.from('banidos').delete().eq('aluno_google_id', googleId);
+  showToast('✅ Aluno liberado!', 'success');
+  renderRestricoes();
+}
+
+async function carregarAlunosRecentes() {
+  const { data } = await supabaseClient.from('pedidos').select('aluno_google_id,aluno_nome,musica_nome,artista_nome,criado_em').order('criado_em', { ascending: false }).limit(30);
+  const vistos = {};
+  (data || []).forEach(p => {
+    if (!vistos[p.aluno_google_id]) vistos[p.aluno_google_id] = p;
+  });
+  return Object.values(vistos);
 }
 
 // ── BACKUP / RESTORE ──────────────────────────────────────────────────────────

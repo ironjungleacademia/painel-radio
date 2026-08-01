@@ -194,6 +194,8 @@ async function onLoggedIn(session) {
   document.getElementById('app').style.display = 'flex';
 
   await carregarConfig();
+  const banido = await verificarBanimento();
+  if (banido) return;
   await verificarStatusVotacao();
   await carregarFila();
 
@@ -202,6 +204,28 @@ async function onLoggedIn(session) {
     await verificarStatusVotacao();
     await carregarFila();
   }, 15000);
+}
+
+// ── BANIMENTO ────────────────────────────────────────────────────────────────
+async function verificarBanimento() {
+  const { data } = await supabaseClient
+    .from('banidos')
+    .select('*')
+    .eq('aluno_google_id', currentUser.id)
+    .maybeSingle();
+
+  if (!data) return false;
+  const ate = new Date(data.banido_ate).getTime();
+  if (ate < Date.now()) return false;
+
+  const restam = Math.ceil((ate - Date.now()) / (24*60*60*1000));
+  document.querySelector('.content').innerHTML = `
+    <div class="page-title">Acesso Suspenso</div>
+    <div class="status-box blocked" style="margin-top:18px">
+      <div class="status-icon">🔒</div>
+      <div class="status-text">Seu acesso para pedir músicas está suspenso por <b>${restam} dia(s)</b>.<br><br>Fale com a recepção da academia se tiver dúvidas.</div>
+    </div>`;
+  return true;
 }
 
 // ── CONFIG (token de catálogo + gêneros permitidos) ────────────────────────
