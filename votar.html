@@ -145,6 +145,7 @@ body{font-family:'Rajdhani',sans-serif;background:var(--black);color:var(--text)
 const SUPABASE_URL = 'https://uxbicgzdjdybktejcssj.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV4YmljZ3pkamR5Ymt0ZWpjc3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU1MjMzMTEsImV4cCI6MjEwMTA5OTMxMX0.TEWvfjuh82RCZRW_HvQL7LpDRvbpA-J5_13MylXlYKk';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const LASTFM_API_KEY = '237fc76df95b9ee0911c99aecd41ad2c';
 
 // ── STATE ───────────────────────────────────────────────────────────────────
 let currentUser = null;
@@ -282,6 +283,32 @@ async function verificarStatusVotacao() {
 // ── BUSCA NO SPOTIFY (catálogo) ─────────────────────────────────────────────
 let ultimosResultados = [];
 
+// ── GÊNERO DO ARTISTA (Last.fm, com cache no Supabase) ──────────────────────
+async function obterGenerosArtista(nomeArtista) {
+  const chave = nomeArtista.toLowerCase();
+
+  // 1. Tenta achar no cache do Supabase primeiro (evita bater no limite do Last.fm)
+  const { data: cache } = await supabaseClient
+    .from('genero_cache')
+    .select('generos')
+    .eq('artista', chave)
+    .maybeSingle();
+  if (cache) return (cache.generos || '').split(',').filter(Boolean);
+
+  // 2. Não tinha no cache — consulta o Last.fm
+  try {
+    const res = await fetch(`https://ws.audioscrobbler.com/2.0/?method=artist.gettoptags&artist=${encodeURIComponent(nomeArtista)}&api_key=${LASTFM_API_KEY}&format=json`);
+    const data = await res.json();
+    const tags = (data.toptags?.tag || []).map(t => t.name.toLowerCase());
+
+    // Salva no cache (mesmo se vier vazio, para não perguntar de novo o tempo todo)
+    await supabaseClient.from('genero_cache').upsert([{ artista: chave, generos: tags.join(',') }]);
+    return tags;
+  } catch (e) {
+    return [];
+  }
+}
+
 async function buscarMusica() {
   const q = document.getElementById('searchInput').value.trim();
   if (!q) return;
@@ -306,28 +333,18 @@ async function buscarMusica() {
     const data = await res.json();
     let tracks = data.tracks?.items || [];
 
-    // Filtrar por gênero permitido
-    // Nota: a rota de buscar vários artistas de uma vez (GET /artists?ids=...) foi
-    // removida pela Spotify em fev/2026 para apps em modo de desenvolvimento.
-    // Por isso buscamos o gênero de cada artista individualmente (GET /artists/{id}).
-    const artistIds = [...new Set(tracks.map(t => t.artists[0]?.id).filter(Boolean))];
-    let genresByArtist = {};
-    await Promise.all(artistIds.map(async id => {
-      try {
-        const resArt = await fetch(`https://api.spotify.com/v1/artists/${id}`, {
-          headers: { 'Authorization': 'Bearer ' + catalogToken }
-        });
-        if (resArt.ok) {
-          const a = await resArt.json();
-          genresByArtist[id] = a.genres || [];
-        }
-      } catch(e) {}
-    }));
+    // Filtrar por gênero permitido usando o Last.fm (a Spotify não fornece mais
+    // gênero de artista de forma confiável). Resultados ficam em cache no Supabase
+    // para não estourar o limite de 2 consultas/segundo do Last.fm.
+    const nomesArtistas = [...new Set(tracks.map(t => (t.artists[0]?.name || '').trim()).filter(Boolean))];
+    let genresByArtistName = {};
+    for (const nome of nomesArtistas) {
+      genresByArtistName[nome.toLowerCase()] = await obterGenerosArtista(nome);
+    }
 
     ultimosResultados = tracks.map(t => {
-      const artistId = t.artists[0]?.id;
       const nomeArtista = (t.artists[0]?.name || '').toLowerCase();
-      const genres = genresByArtist[artistId] || [];
+      const genres = genresByArtistName[nomeArtista] || [];
       const bloqueadoPorNome = artistasBloqueados.some(a => nomeArtista.includes(a));
       const permitidoPorGenero = genres.length === 0 || genres.some(g => allowedGenres.some(a => g.toLowerCase().includes(a)));
       const permitido = permitidoPorGenero && !bloqueadoPorNome;
