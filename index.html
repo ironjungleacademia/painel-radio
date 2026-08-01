@@ -271,6 +271,9 @@ select option{background:var(--dark2)}
     <div class="nav-item" onclick="showPage('avisos')" id="nav-avisos">
       <span class="nav-icon">📢</span> Avisos por Voz
     </div>
+    <div class="nav-item" onclick="showPage('restricoes')" id="nav-restricoes">
+      <span class="nav-icon">🚫</span> Restrições
+    </div>
     <div class="nav-item" onclick="showPage('config')" id="nav-config">
       <span class="nav-icon">⚙️</span> Configurações
     </div>
@@ -1035,6 +1038,7 @@ function showPage(page) {
   else if (page === 'recepcao') renderRecepcao();
   else if (page === 'agenda') content.innerHTML = renderAgenda();
   else if (page === 'avisos') content.innerHTML = renderAvisos();
+  else if (page === 'restricoes') renderRestricoes();
   else if (page === 'config') content.innerHTML = renderConfig();
 }
 
@@ -1970,6 +1974,91 @@ function limparHistoricoAvisos() {
   historicaAvisos = [];
   localStorage.setItem('ij_avisos_hist', JSON.stringify([]));
   showPage('avisos');
+}
+
+// ── RESTRIÇÕES DE CONTEÚDO (gêneros e artistas bloqueados) ───────────────────
+let restricaoGeneros = [];
+let restricaoArtistas = [];
+
+async function carregarRestricoes() {
+  const { data } = await supabaseClient.from('config').select('chave,valor').in('chave', ['generos_permitidos','artistas_bloqueados']);
+  const map = {};
+  (data || []).forEach(r => map[r.chave] = r.valor);
+  restricaoGeneros = (map.generos_permitidos || '').split(',').map(g => g.trim()).filter(Boolean);
+  restricaoArtistas = (map.artistas_bloqueados || '').split(',').map(a => a.trim()).filter(Boolean);
+}
+
+async function renderRestricoes() {
+  currentPage = 'restricoes';
+  const content = document.getElementById('pageContent');
+  content.innerHTML = '<div class="page-title">Restrições de Conteúdo</div><div class="page-sub">Carregando...</div>';
+  await carregarRestricoes();
+  content.innerHTML = `
+  <div class="page-title">🚫 Restrições de Conteúdo</div>
+  <div class="page-sub">Controla o que os alunos podem pedir na página de votação.</div>
+  <div class="grid-2">
+    <div class="card card-gold">
+      <div class="section-title" style="margin-bottom:4px">🎸 Gêneros Permitidos</div>
+      <div style="font-size:13px;color:var(--text-dim);margin-bottom:14px">Só músicas de artistas com esses gêneros aparecem na busca dos alunos.</div>
+      <div id="restricaoGenerosList" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        ${restricaoGeneros.map(g=>`<span class="badge badge-gold" style="cursor:pointer" onclick="removerRestricaoGenero('${g.replace(/'/g,"\\'")}')">${g} ✕</span>`).join('') || '<span style="color:var(--text-dim);font-size:13px">Nenhum gênero cadastrado</span>'}
+      </div>
+      <div style="display:flex;gap:8px">
+        <input id="novoGeneroInput" placeholder="Ex: rock, sertanejo..." onkeydown="if(event.key==='Enter')adicionarRestricaoGenero()">
+        <button class="btn btn-outline btn-sm" onclick="adicionarRestricaoGenero()">+ Add</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title" style="margin-bottom:4px">🚫 Artistas Bloqueados</div>
+      <div style="font-size:13px;color:var(--text-dim);margin-bottom:14px">Bloqueia um artista específico, mesmo que o gênero dele passe no filtro ao lado.</div>
+      <div id="restricaoArtistasList" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        ${restricaoArtistas.map(a=>`<span class="badge badge-red" style="cursor:pointer" onclick="removerRestricaoArtista('${a.replace(/'/g,"\\'")}')">${a} ✕</span>`).join('') || '<span style="color:var(--text-dim);font-size:13px">Nenhum artista bloqueado</span>'}
+      </div>
+      <div style="display:flex;gap:8px">
+        <input id="novoArtistaInput" placeholder="Nome do artista..." onkeydown="if(event.key==='Enter')adicionarRestricaoArtista()">
+        <button class="btn btn-outline btn-sm" onclick="adicionarRestricaoArtista()">+ Add</button>
+      </div>
+    </div>
+  </div>
+  <div style="font-size:11px;color:var(--text-dim);margin-top:16px">⚠️ Mudanças aqui valem para novas buscas dos alunos a partir de agora — não afeta pedidos já feitos.</div>`;
+}
+
+async function salvarRestricaoGeneros() {
+  await supabaseClient.from('config').upsert([{ chave: 'generos_permitidos', valor: restricaoGeneros.join(',') }]);
+}
+async function salvarRestricaoArtistas() {
+  await supabaseClient.from('config').upsert([{ chave: 'artistas_bloqueados', valor: restricaoArtistas.join(',') }]);
+}
+
+async function adicionarRestricaoGenero() {
+  const input = document.getElementById('novoGeneroInput');
+  const genero = input?.value?.trim().toLowerCase();
+  if (!genero) return;
+  if (restricaoGeneros.includes(genero)) { showToast('⚠️ Gênero já está na lista!', 'error'); return; }
+  restricaoGeneros.push(genero);
+  await salvarRestricaoGeneros();
+  showToast('✅ Gênero adicionado!', 'success');
+  renderRestricoes();
+}
+async function removerRestricaoGenero(genero) {
+  restricaoGeneros = restricaoGeneros.filter(g => g !== genero);
+  await salvarRestricaoGeneros();
+  renderRestricoes();
+}
+async function adicionarRestricaoArtista() {
+  const input = document.getElementById('novoArtistaInput');
+  const artista = input?.value?.trim().toLowerCase();
+  if (!artista) return;
+  if (restricaoArtistas.includes(artista)) { showToast('⚠️ Artista já está bloqueado!', 'error'); return; }
+  restricaoArtistas.push(artista);
+  await salvarRestricaoArtistas();
+  showToast('🚫 Artista bloqueado!', 'success');
+  renderRestricoes();
+}
+async function removerRestricaoArtista(artista) {
+  restricaoArtistas = restricaoArtistas.filter(a => a !== artista);
+  await salvarRestricaoArtistas();
+  renderRestricoes();
 }
 
 // ── BACKUP / RESTORE ──────────────────────────────────────────────────────────
