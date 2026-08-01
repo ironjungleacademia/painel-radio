@@ -89,6 +89,11 @@ body{font-family:'Rajdhani',sans-serif;background:var(--black);color:var(--text)
 .now-eq span:nth-child(3){height:9px;animation-delay:.4s}
 @keyframes eq{0%,100%{transform:scaleY(.4)}50%{transform:scaleY(1)}}
 
+.pedido-badge{display:flex;align-items:center;gap:6px;flex-shrink:0;background:rgba(201,168,76,.12);border:1px solid var(--gold-dim);border-radius:20px;padding:4px 10px 4px 4px}
+.pedido-badge img{width:22px;height:22px;border-radius:50%;object-fit:cover}
+.pedido-badge .sem-foto{width:22px;height:22px;border-radius:50%;background:var(--dark4);display:flex;align-items:center;justify-content:center;font-size:11px}
+.pedido-badge-nome{font-size:11px;font-weight:700;color:var(--gold);white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis}
+
 /* TOAST */
 .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:var(--dark2);color:var(--text);padding:13px 20px;border-radius:10px;font-weight:700;font-size:13px;z-index:999;border:1px solid var(--gold-dim);box-shadow:0 4px 20px rgba(0,0,0,.4);max-width:90%;text-align:center;animation:slideDown .3s ease}
 .toast.success{border-color:var(--green)}
@@ -413,10 +418,12 @@ async function pedirMusica(trackId) {
   if (!track) return;
 
   const nome = currentUser.user_metadata?.full_name || currentUser.email || 'Aluno';
+  const foto = currentUser.user_metadata?.avatar_url || null;
   const { error } = await supabaseClient.from('pedidos').insert([{
     aluno_google_id: currentUser.id,
     aluno_nome: nome,
     aluno_email: currentUser.email || null,
+    aluno_foto: foto,
     musica_nome: track.nome,
     artista_nome: track.artista,
     spotify_track_id: track.id,
@@ -454,6 +461,31 @@ async function carregarFila() {
   try { info = JSON.parse(data.valor); } catch(e) { info = null; }
   if (!info) { listEl.innerHTML = '<div class="empty-state">Nenhuma informação da fila no momento.</div>'; return; }
 
+  // Descobre quais faixas da fila foram pedidas por alunos (para mostrar quem pediu)
+  const idsNaFila = [info.tocando?.id, ...(info.proximas || []).map(t => t.id)].filter(Boolean);
+  let pedidoPorTrackId = {};
+  if (idsNaFila.length > 0) {
+    const { data: pedidosFeitos } = await supabaseClient
+      .from('pedidos')
+      .select('spotify_track_id,aluno_nome,aluno_foto')
+      .eq('status', 'enviado')
+      .in('spotify_track_id', idsNaFila)
+      .order('enviado_em', { ascending: false });
+    (pedidosFeitos || []).forEach(p => {
+      if (!pedidoPorTrackId[p.spotify_track_id]) pedidoPorTrackId[p.spotify_track_id] = p;
+    });
+  }
+
+  function renderBadgePedido(id) {
+    const p = pedidoPorTrackId[id];
+    if (!p) return '';
+    const inicial = (p.aluno_nome || '?').charAt(0).toUpperCase();
+    return `<div class="pedido-badge">
+      ${p.aluno_foto ? `<img src="${p.aluno_foto}">` : `<div class="sem-foto">${inicial}</div>`}
+      <span class="pedido-badge-nome">${p.aluno_nome}</span>
+    </div>`;
+  }
+
   // Aviso se a informação estiver muito desatualizada (painel da academia offline)
   const desatualizado = info.atualizado_em && (Date.now() - new Date(info.atualizado_em).getTime() > 60 * 1000);
 
@@ -466,7 +498,7 @@ async function carregarFila() {
           <div class="now-name">${info.tocando.nome}</div>
           <div class="now-artist">${info.tocando.artista}</div>
         </div>
-        <div class="now-eq"><span></span><span></span><span></span></div>
+        ${renderBadgePedido(info.tocando.id) || '<div class="now-eq"><span></span><span></span><span></span></div>'}
       </div>`;
   } else {
     cardEl.innerHTML = '';
@@ -491,6 +523,7 @@ async function carregarFila() {
         <div class="queue-name">${t.nome}</div>
         <div class="queue-meta">${t.artista}</div>
       </div>
+      ${renderBadgePedido(t.id)}
     </div>`).join('');
 }
 

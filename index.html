@@ -605,12 +605,14 @@ async function publicarFilaAtual() {
   if (!data) return;
 
   const tocando = data.currently_playing ? {
+    id: data.currently_playing.id,
     nome: data.currently_playing.name,
     artista: (data.currently_playing.artists || []).map(a => a.name).join(', '),
     capa: data.currently_playing.album?.images?.[2]?.url || data.currently_playing.album?.images?.[0]?.url || ''
   } : null;
 
   const proximas = (data.queue || []).slice(0, 8).map(t => ({
+    id: t.id,
     nome: t.name,
     artista: (t.artists || []).map(a => a.name).join(', '),
     capa: t.album?.images?.[2]?.url || t.album?.images?.[0]?.url || ''
