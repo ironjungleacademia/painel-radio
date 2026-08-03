@@ -94,6 +94,8 @@ body{font-family:'Rajdhani',sans-serif;background:var(--black);color:var(--text)
 .pedido-badge .sem-foto{width:22px;height:22px;border-radius:50%;background:var(--dark4);display:flex;align-items:center;justify-content:center;font-size:11px}
 .pedido-badge-nome{font-size:11px;font-weight:700;color:var(--gold);white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis}
 
+.voto-badge{display:flex;align-items:center;gap:4px;flex-shrink:0;background:rgba(201,168,76,.15);border:1px solid var(--gold-dim);border-radius:20px;padding:5px 12px;font-size:12px;font-weight:700;color:var(--gold)}
+
 /* TOAST */
 .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:var(--dark2);color:var(--text);padding:13px 20px;border-radius:10px;font-weight:700;font-size:13px;z-index:999;border:1px solid var(--gold-dim);box-shadow:0 4px 20px rgba(0,0,0,.4);max-width:90%;text-align:center;animation:slideDown .3s ease}
 .toast.success{border-color:var(--green)}
@@ -151,6 +153,11 @@ body{font-family:'Rajdhani',sans-serif;background:var(--black);color:var(--text)
     </div>
 
     <div id="resultsList"></div>
+
+    <div class="section-title">🗳️ Concorrendo para Tocar</div>
+    <div id="votacaoList">
+      <div class="empty-state">Carregando...</div>
+    </div>
 
     <div class="section-title">🎶 A Seguir na Academia</div>
     <div id="queueList">
@@ -221,11 +228,13 @@ async function onLoggedIn(session) {
   if (banido) return;
   await verificarStatusVotacao();
   await carregarFila();
+  await carregarVotacaoPendente();
 
   if (queuePollInterval) clearInterval(queuePollInterval);
   queuePollInterval = setInterval(async () => {
     await verificarStatusVotacao();
     await carregarFila();
+    await carregarVotacaoPendente();
   }, 8000);
 }
 
@@ -343,17 +352,27 @@ async function buscarMusica() {
   document.getElementById('resultsList').innerHTML = '<div class="empty-state">Buscando...</div>';
 
   try {
-    const res = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&market=BR&limit=10`, {
-      headers: { 'Authorization': 'Bearer ' + catalogToken }
-    });
-    if (res.status === 401) {
-      catalogToken = null;
-      showToast('⚠️ Sistema indisponível no momento. Peça para religarem o painel da recepção.', 'error');
-      document.getElementById('resultsList').innerHTML = '';
-      return;
+    // A Spotify limita cada busca a no máximo 10 resultados (mudança de fev/2026).
+    // Fazemos 2 buscas em sequência (offset 0 e 10) para ter mais candidatos
+    // antes do filtro de gênero, já que boa parte é descartada nesse filtro.
+    let tracks = [];
+    for (const offset of [0, 10]) {
+      const res = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(q)}&type=track&market=BR&limit=10&offset=${offset}`, {
+        headers: { 'Authorization': 'Bearer ' + catalogToken }
+      });
+      if (res.status === 401) {
+        catalogToken = null;
+        showToast('⚠️ Sistema indisponível no momento. Peça para religarem o painel da recepção.', 'error');
+        document.getElementById('resultsList').innerHTML = '';
+        return;
+      }
+      if (!res.ok) break;
+      const data = await res.json();
+      tracks = tracks.concat(data.tracks?.items || []);
     }
-    const data = await res.json();
-    let tracks = data.tracks?.items || [];
+    // Remove duplicatas (mesma música podendo vir marcada em mais de uma página)
+    const vistos = new Set();
+    tracks = tracks.filter(t => { if (vistos.has(t.id)) return false; vistos.add(t.id); return true; });
 
     // Filtrar por gênero permitido usando o Last.fm (a Spotify não fornece mais
     // gênero de artista de forma confiável). Resultados ficam em cache no Supabase
@@ -380,6 +399,19 @@ async function buscarMusica() {
       };
     }).filter(t => t.permitido);
 
+    // Anexa quantos votos cada resultado já tem na votação em andamento
+    if (ultimosResultados.length > 0) {
+      const idsResultados = ultimosResultados.map(t => t.id);
+      const { data: votosAtuais } = await supabaseClient
+        .from('pedidos')
+        .select('spotify_track_id')
+        .eq('status', 'pendente')
+        .in('spotify_track_id', idsResultados);
+      const contagem = {};
+      (votosAtuais || []).forEach(v => { contagem[v.spotify_track_id] = (contagem[v.spotify_track_id] || 0) + 1; });
+      ultimosResultados.forEach(t => { t.votos = contagem[t.id] || 0; });
+    }
+
     renderizarResultados(ultimosResultados);
   } catch (e) {
     showToast('❌ Erro ao buscar músicas', 'error');
@@ -402,6 +434,7 @@ function renderizarResultados(tracks) {
         <div class="track-name">${t.nome}</div>
         <div class="track-artist">${t.artista}</div>
       </div>
+      ${t.votos > 0 ? `<div class="voto-badge">🗳️ ${t.votos}</div>` : ''}
       <button class="pedir-btn" ${podeVotarAgora ? '' : 'disabled'} onclick="pedirMusica('${t.id}')">
         ${podeVotarAgora ? '+ Pedir' : 'Aguarde'}
       </button>
@@ -428,6 +461,7 @@ async function pedirMusica(trackId) {
     artista_nome: track.artista,
     spotify_track_id: track.id,
     genero: track.genero || null,
+    capa: track.capa || null,
     status: 'pendente'
   }]);
 
@@ -436,8 +470,47 @@ async function pedirMusica(trackId) {
     return;
   }
   showToast('✅ Pedido enviado! Sua música entrou na fila.', 'success');
+  ultimosResultados = [];
+  document.getElementById('resultsList').innerHTML = '';
+  document.getElementById('searchInput').value = '';
   await verificarStatusVotacao();
   await carregarFila();
+  await carregarVotacaoPendente();
+}
+
+// ── VOTAÇÃO EM ANDAMENTO (músicas pendentes, ordenadas por votos) ───────────
+async function carregarVotacaoPendente() {
+  const el = document.getElementById('votacaoList');
+  const { data, error } = await supabaseClient
+    .from('pedidos')
+    .select('spotify_track_id,musica_nome,artista_nome,capa,criado_em')
+    .eq('status', 'pendente')
+    .order('criado_em', { ascending: true });
+
+  if (error) { el.innerHTML = '<div class="empty-state">Erro ao carregar votação.</div>'; return; }
+  if (!data || data.length === 0) { el.innerHTML = '<div class="empty-state">📭 Nenhuma música concorrendo no momento — seja o primeiro a pedir!</div>'; return; }
+
+  // Agrupa por música e conta votos, mesma lógica usada para decidir o envio real
+  const grupos = {};
+  data.forEach(p => {
+    if (!grupos[p.spotify_track_id]) grupos[p.spotify_track_id] = { ...p, votos: 0 };
+    grupos[p.spotify_track_id].votos++;
+  });
+  const ranking = Object.values(grupos).sort((a, b) => {
+    if (b.votos !== a.votos) return b.votos - a.votos;
+    return new Date(a.criado_em) - new Date(b.criado_em);
+  });
+
+  el.innerHTML = ranking.map((t, i) => `
+    <div class="queue-item">
+      <div class="queue-pos">${i + 1}</div>
+      ${t.capa ? `<img class="queue-cover" src="${t.capa}">` : ''}
+      <div class="queue-info">
+        <div class="queue-name">${t.musica_nome}</div>
+        <div class="queue-meta">${t.artista_nome}</div>
+      </div>
+      <div class="voto-badge">🗳️ ${t.votos}</div>
+    </div>`).join('');
 }
 
 // ── TOCANDO AGORA + FILA REAL DA SPOTIFY ─────────────────────────────────────
