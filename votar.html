@@ -588,12 +588,16 @@ async function carregarFila() {
   if (!info) { listEl.innerHTML = '<div class="empty-state">Nenhuma informação da fila no momento.</div>'; return; }
 
   // Descobre quais faixas da fila foram pedidas por alunos (para mostrar quem votou)
-  // Comparação por nome + artista, pois o voto pode ter sido em outra versão/álbum
+  // Comparação por nome + artista, pois o voto pode ter sido em outra versão/álbum.
+  // Só considera envios recentes (20min) — senão votos de dias anteriores continuariam
+  // sendo contados pra sempre toda vez que a mesma música tocasse de novo.
   pedidoPorTrackId = {};
+  const vinteMinAtras = new Date(Date.now() - 20 * 60 * 1000).toISOString();
   const { data: pedidosFeitos } = await supabaseClient
     .from('pedidos')
     .select('musica_nome,artista_nome,aluno_nome,aluno_foto')
     .eq('status', 'enviado')
+    .gt('enviado_em', vinteMinAtras)
     .order('enviado_em', { ascending: true });
   (pedidosFeitos || []).forEach(p => {
     const chave = chaveMusica(p.musica_nome, p.artista_nome);

@@ -865,7 +865,7 @@ async function checkAuth() {
     salvarTokenCatalogoNoSupabase();
     setInterval(salvarTokenCatalogoNoSupabase, 50 * 60 * 1000); // renova a cada 50 min
     enviarPedidosParaFila();
-    setInterval(enviarPedidosParaFila, 10 * 1000); // checa pedidos dos alunos a cada 10s
+    setInterval(enviarPedidosParaFila, 5 * 1000); // checa pedidos dos alunos a cada 5s (o mais rápido viável)
     publicarFilaAtual();
     setInterval(publicarFilaAtual, 10 * 1000); // publica a fila real da Spotify para os alunos verem
   }
