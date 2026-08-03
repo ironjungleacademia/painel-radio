@@ -603,12 +603,33 @@ async function enviarPedidosParaFila() {
       return new Date(a[0].criado_em) - new Date(b[0].criado_em);
     });
 
+    // Evita mandar a MESMA música duas vezes para a Spotify quando votos da
+    // mesma faixa chegam em ciclos diferentes (ex: 2 alunos votaram com alguns
+    // segundos de diferença). Se já foi enviada há pouco tempo, o novo voto só
+    // é contabilizado — não manda a música de novo para a fila real.
+    const idsDosGrupos = Object.keys(grupos);
+    const vinteMinAtras = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+    const { data: enviosRecentes } = await supabaseClient
+      .from('pedidos')
+      .select('spotify_track_id')
+      .eq('status', 'enviado')
+      .in('spotify_track_id', idsDosGrupos)
+      .gt('enviado_em', vinteMinAtras);
+    const jaEnviadosRecentemente = new Set((enviosRecentes || []).map(p => p.spotify_track_id));
+
     for (const grupo of ranking) {
       const primeiro = grupo[0];
+      const idsGrupo = grupo.map(p => p.id);
+
+      if (jaEnviadosRecentemente.has(primeiro.spotify_track_id)) {
+        // Já está na fila real — só soma o(s) voto(s) novo(s), sem duplicar o envio
+        await supabaseClient.from('pedidos').update({ status: 'enviado', enviado_em: new Date().toISOString() }).in('id', idsGrupo);
+        continue;
+      }
+
       const uri = 'spotify:track:' + primeiro.spotify_track_id;
       const resultado = await spotifyFetch('/me/player/queue?uri=' + encodeURIComponent(uri), 'POST');
       if (resultado !== null) {
-        const idsGrupo = grupo.map(p => p.id);
         const { error: erroUpdate } = await supabaseClient
           .from('pedidos')
           .update({ status: 'enviado', enviado_em: new Date().toISOString() })

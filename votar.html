@@ -534,7 +534,7 @@ async function carregarFila() {
   try { info = JSON.parse(data.valor); } catch(e) { info = null; }
   if (!info) { listEl.innerHTML = '<div class="empty-state">Nenhuma informação da fila no momento.</div>'; return; }
 
-  // Descobre quais faixas da fila foram pedidas por alunos (para mostrar quem pediu)
+  // Descobre quais faixas da fila foram pedidas por alunos (para mostrar quem votou)
   const idsNaFila = [info.tocando?.id, ...(info.proximas || []).map(t => t.id)].filter(Boolean);
   let pedidoPorTrackId = {};
   if (idsNaFila.length > 0) {
@@ -543,19 +543,23 @@ async function carregarFila() {
       .select('spotify_track_id,aluno_nome,aluno_foto')
       .eq('status', 'enviado')
       .in('spotify_track_id', idsNaFila)
-      .order('enviado_em', { ascending: false });
+      .order('enviado_em', { ascending: true });
     (pedidosFeitos || []).forEach(p => {
-      if (!pedidoPorTrackId[p.spotify_track_id]) pedidoPorTrackId[p.spotify_track_id] = p;
+      if (!pedidoPorTrackId[p.spotify_track_id]) pedidoPorTrackId[p.spotify_track_id] = [];
+      pedidoPorTrackId[p.spotify_track_id].push(p);
     });
   }
 
   function renderBadgePedido(id) {
-    const p = pedidoPorTrackId[id];
-    if (!p) return '';
-    const inicial = (p.aluno_nome || '?').charAt(0).toUpperCase();
-    return `<div class="pedido-badge">
-      ${p.aluno_foto ? `<img src="${p.aluno_foto}">` : `<div class="sem-foto">${inicial}</div>`}
-      <span class="pedido-badge-nome">${p.aluno_nome}</span>
+    const votantes = pedidoPorTrackId[id];
+    if (!votantes || votantes.length === 0) return '';
+    const primeiro = votantes[0];
+    const extras = votantes.length - 1;
+    const inicial = (primeiro.aluno_nome || '?').charAt(0).toUpperCase();
+    const todosOsNomes = votantes.map(v => v.aluno_nome).join(', ');
+    return `<div class="pedido-badge" title="${todosOsNomes}">
+      ${primeiro.aluno_foto ? `<img src="${primeiro.aluno_foto}">` : `<div class="sem-foto">${inicial}</div>`}
+      <span class="pedido-badge-nome">${primeiro.aluno_nome}${extras > 0 ? ' +' + extras : ''}</span>
     </div>`;
   }
 
