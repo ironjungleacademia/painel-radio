@@ -579,6 +579,12 @@ async function salvarTokenCatalogoNoSupabase() {
   ]);
 }
   let enviandoPedidos = false;
+// Chave usada para agrupar votos pelo NOME da música + artista, ignorando
+// de qual álbum/versão específica cada voto veio na Spotify.
+function chaveMusica(nome, artista) {
+  return (nome || '').trim().toLowerCase() + '|' + (artista || '').trim().toLowerCase();
+}
+
 async function enviarPedidosParaFila() {
   if (enviandoPedidos) return; // evita rodadas sobrepostas
   enviandoPedidos = true;
@@ -591,37 +597,38 @@ async function enviarPedidosParaFila() {
 
     if (error || !pendentes || pendentes.length === 0) return;
 
-    // Agrupa pedidos da MESMA música (cada aluno que pediu = 1 voto) e ordena
-    // por mais votada primeiro; empate é resolvido por quem foi pedida primeiro.
+    // Agrupa pedidos da MESMA música (nome + artista, ignorando qual álbum/versão
+    // específica cada aluno escolheu) e ordena por mais votada primeiro; empate
+    // é resolvido por quem foi pedida primeiro.
     const grupos = {};
     pendentes.forEach(p => {
-      if (!grupos[p.spotify_track_id]) grupos[p.spotify_track_id] = [];
-      grupos[p.spotify_track_id].push(p);
+      const chave = chaveMusica(p.musica_nome, p.artista_nome);
+      if (!grupos[chave]) grupos[chave] = [];
+      grupos[chave].push(p);
     });
     const ranking = Object.values(grupos).sort((a, b) => {
       if (b.length !== a.length) return b.length - a.length;
       return new Date(a[0].criado_em) - new Date(b[0].criado_em);
     });
 
-    // Evita mandar a MESMA música duas vezes para a Spotify quando votos da
-    // mesma faixa chegam em ciclos diferentes (ex: 2 alunos votaram com alguns
-    // segundos de diferença). Se já foi enviada há pouco tempo, o novo voto só
-    // é contabilizado — não manda a música de novo para a fila real.
-    const idsDosGrupos = Object.keys(grupos);
+    // Evita mandar a MESMA música duas vezes para a Spotify quando votos dela
+    // chegam em ciclos diferentes (ex: 2 alunos votaram com alguns segundos de
+    // diferença, ou escolheram álbuns diferentes). Se já foi enviada há pouco
+    // tempo, o novo voto só é contabilizado — não manda de novo para a fila real.
     const vinteMinAtras = new Date(Date.now() - 20 * 60 * 1000).toISOString();
     const { data: enviosRecentes } = await supabaseClient
       .from('pedidos')
-      .select('spotify_track_id')
+      .select('musica_nome,artista_nome')
       .eq('status', 'enviado')
-      .in('spotify_track_id', idsDosGrupos)
       .gt('enviado_em', vinteMinAtras);
-    const jaEnviadosRecentemente = new Set((enviosRecentes || []).map(p => p.spotify_track_id));
+    const jaEnviadosRecentemente = new Set((enviosRecentes || []).map(p => chaveMusica(p.musica_nome, p.artista_nome)));
 
     for (const grupo of ranking) {
-      const primeiro = grupo[0];
+      const primeiro = grupo[0]; // quem votou primeiro — a versão/álbum dele é a que vai tocar
       const idsGrupo = grupo.map(p => p.id);
+      const chave = chaveMusica(primeiro.musica_nome, primeiro.artista_nome);
 
-      if (jaEnviadosRecentemente.has(primeiro.spotify_track_id)) {
+      if (jaEnviadosRecentemente.has(chave)) {
         // Já está na fila real — só soma o(s) voto(s) novo(s), sem duplicar o envio
         await supabaseClient.from('pedidos').update({ status: 'enviado', enviado_em: new Date().toISOString() }).in('id', idsGrupo);
         continue;

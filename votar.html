@@ -179,6 +179,12 @@ const LASTFM_API_KEY = '237fc76df95b9ee0911c99aecd41ad2c';
 // ── STATE ───────────────────────────────────────────────────────────────────
 let currentUser = null;
 let pedidoPorTrackId = {};
+
+// Chave usada para agrupar votos pelo NOME da música + artista, ignorando
+// de qual álbum/versão específica cada voto veio na Spotify.
+function chaveMusica(nome, artista) {
+  return (nome || '').trim().toLowerCase() + '|' + (artista || '').trim().toLowerCase();
+}
 let catalogToken = null;
 let allowedGenres = [];
 let artistasBloqueados = [];
@@ -401,16 +407,18 @@ async function buscarMusica() {
     }).filter(t => t.permitido);
 
     // Anexa quantos votos cada resultado já tem na votação em andamento
+    // (contando pelo nome da música + artista, não pela versão/álbum exata)
     if (ultimosResultados.length > 0) {
-      const idsResultados = ultimosResultados.map(t => t.id);
       const { data: votosAtuais } = await supabaseClient
         .from('pedidos')
-        .select('spotify_track_id')
-        .eq('status', 'pendente')
-        .in('spotify_track_id', idsResultados);
+        .select('musica_nome,artista_nome')
+        .eq('status', 'pendente');
       const contagem = {};
-      (votosAtuais || []).forEach(v => { contagem[v.spotify_track_id] = (contagem[v.spotify_track_id] || 0) + 1; });
-      ultimosResultados.forEach(t => { t.votos = contagem[t.id] || 0; });
+      (votosAtuais || []).forEach(v => {
+        const chave = chaveMusica(v.musica_nome, v.artista_nome);
+        contagem[chave] = (contagem[chave] || 0) + 1;
+      });
+      ultimosResultados.forEach(t => { t.votos = contagem[chaveMusica(t.nome, t.artista)] || 0; });
     }
 
     renderizarResultados(ultimosResultados);
@@ -491,11 +499,13 @@ async function carregarVotacaoPendente() {
   if (error) { el.innerHTML = '<div class="empty-state">Erro ao carregar votação.</div>'; return; }
   if (!data || data.length === 0) { el.innerHTML = '<div class="empty-state">📭 Nenhuma música concorrendo no momento — seja o primeiro a pedir!</div>'; return; }
 
-  // Agrupa por música e conta votos, mesma lógica usada para decidir o envio real
+  // Agrupa por nome da música + artista (mesma lógica usada para decidir o
+  // envio real) — assim, votos em álbuns diferentes da mesma música se somam
   const grupos = {};
   data.forEach(p => {
-    if (!grupos[p.spotify_track_id]) grupos[p.spotify_track_id] = { ...p, votos: 0 };
-    grupos[p.spotify_track_id].votos++;
+    const chave = chaveMusica(p.musica_nome, p.artista_nome);
+    if (!grupos[chave]) grupos[chave] = { ...p, votos: 0 }; // primeiro voto define nome/capa exibidos
+    grupos[chave].votos++;
   });
   const ranking = Object.values(grupos).sort((a, b) => {
     if (b.votos !== a.votos) return b.votos - a.votos;
@@ -536,26 +546,25 @@ async function carregarFila() {
   if (!info) { listEl.innerHTML = '<div class="empty-state">Nenhuma informação da fila no momento.</div>'; return; }
 
   // Descobre quais faixas da fila foram pedidas por alunos (para mostrar quem votou)
-  const idsNaFila = [info.tocando?.id, ...(info.proximas || []).map(t => t.id)].filter(Boolean);
+  // Comparação por nome + artista, pois o voto pode ter sido em outra versão/álbum
   pedidoPorTrackId = {};
-  if (idsNaFila.length > 0) {
-    const { data: pedidosFeitos } = await supabaseClient
-      .from('pedidos')
-      .select('spotify_track_id,aluno_nome,aluno_foto')
-      .eq('status', 'enviado')
-      .in('spotify_track_id', idsNaFila)
-      .order('enviado_em', { ascending: true });
-    (pedidosFeitos || []).forEach(p => {
-      if (!pedidoPorTrackId[p.spotify_track_id]) pedidoPorTrackId[p.spotify_track_id] = [];
-      pedidoPorTrackId[p.spotify_track_id].push(p);
-    });
-  }
+  const { data: pedidosFeitos } = await supabaseClient
+    .from('pedidos')
+    .select('musica_nome,artista_nome,aluno_nome,aluno_foto')
+    .eq('status', 'enviado')
+    .order('enviado_em', { ascending: true });
+  (pedidosFeitos || []).forEach(p => {
+    const chave = chaveMusica(p.musica_nome, p.artista_nome);
+    if (!pedidoPorTrackId[chave]) pedidoPorTrackId[chave] = [];
+    pedidoPorTrackId[chave].push(p);
+  });
 
-  function renderBadgePedido(id) {
-    const votantes = pedidoPorTrackId[id];
+  function renderBadgePedido(nome, artista) {
+    const votantes = pedidoPorTrackId[chaveMusica(nome, artista)];
     if (!votantes || votantes.length === 0) return '';
     const n = votantes.length;
-    return `<div class="voto-badge" style="cursor:pointer" onclick="mostrarVotantes('${id}')" title="Toque para ver quem votou">🗳️ ${n} voto${n > 1 ? 's' : ''}</div>`;
+    const chave = chaveMusica(nome, artista).replace(/'/g, "\\'");
+    return `<div class="voto-badge" style="cursor:pointer" onclick="mostrarVotantes('${chave}')" title="Toque para ver quem votou">🗳️ ${n} voto${n > 1 ? 's' : ''}</div>`;
   }
 
   // Aviso se a informação estiver muito desatualizada (painel da academia offline)
@@ -570,7 +579,7 @@ async function carregarFila() {
           <div class="now-name">${info.tocando.nome}</div>
           <div class="now-artist">${info.tocando.artista}</div>
         </div>
-        ${renderBadgePedido(info.tocando.id) || '<div class="now-eq"><span></span><span></span><span></span></div>'}
+        ${renderBadgePedido(info.tocando.nome, info.tocando.artista) || '<div class="now-eq"><span></span><span></span><span></span></div>'}
       </div>`;
   } else {
     cardEl.innerHTML = '';
@@ -595,13 +604,13 @@ async function carregarFila() {
         <div class="queue-name">${t.nome}</div>
         <div class="queue-meta">${t.artista}</div>
       </div>
-      ${renderBadgePedido(t.id)}
+      ${renderBadgePedido(t.nome, t.artista)}
     </div>`).join('');
 }
 
 // ── UTILS ─────────────────────────────────────────────────────────────────────
-function mostrarVotantes(trackId) {
-  const votantes = pedidoPorTrackId[trackId];
+function mostrarVotantes(chave) {
+  const votantes = pedidoPorTrackId[chave];
   if (!votantes || votantes.length === 0) return;
   const nomes = votantes.map(v => v.aluno_nome).join(', ');
   showToast('🗳️ ' + nomes, '');
