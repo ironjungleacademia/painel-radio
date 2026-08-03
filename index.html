@@ -232,7 +232,20 @@ select option{background:var(--dark2)}
 </head>
 <body>
 
-<div id="authScreen" class="auth-screen">
+<div id="passwordGate" class="auth-screen">
+  <div class="auth-box">
+    <div style="font-size:70px">🔒</div>
+    <div class="auth-title">ACESSO RESTRITO</div>
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:3px;color:var(--text-dim);margin-bottom:4px">PAINEL DA RECEPÇÃO</div>
+    <div class="auth-sub">Área exclusiva da equipe. Informe usuário e senha para continuar.</div>
+    <input id="gateUser" placeholder="Usuário" style="margin-bottom:12px" onkeydown="if(event.key==='Enter')document.getElementById('gatePass').focus()">
+    <input id="gatePass" type="password" placeholder="Senha" style="margin-bottom:16px" onkeydown="if(event.key==='Enter')tentarAcessoPainel()">
+    <button class="btn btn-gold btn-full" onclick="tentarAcessoPainel()">🔓 Entrar</button>
+    <div id="gateErro" style="color:var(--red);font-size:13px;margin-top:12px;display:none">❌ Usuário ou senha incorretos.</div>
+  </div>
+</div>
+
+<div id="authScreen" class="auth-screen" style="display:none">
   <div class="auth-box">
     <div style="font-size:70px">🦁</div>
     <div class="auth-title">IRON JUNGLE</div>
@@ -2338,10 +2351,35 @@ async function testeVolume() {
   }, 5000);
 }
 
+// ── ACESSO RESTRITO (senha da recepção) ──────────────────────────────────────
+const GATE_USER = 'admin';
+const GATE_PASS = 'iron.j';
+
+function tentarAcessoPainel() {
+  const user = document.getElementById('gateUser').value.trim();
+  const pass = document.getElementById('gatePass').value;
+  const erroEl = document.getElementById('gateErro');
+  if (user === GATE_USER && pass === GATE_PASS) {
+    localStorage.setItem('ij_gate_ok', '1');
+    liberarPainel();
+  } else {
+    erroEl.style.display = 'block';
+    document.getElementById('gatePass').value = '';
+  }
+}
+
+function liberarPainel() {
+  document.getElementById('passwordGate').style.display = 'none';
+  document.getElementById('authScreen').style.display = 'flex';
+  initDB().then(() => checkAuth()).catch(console.error);
+}
+
 // ── INIT ──────────────────────────────────────────────────────────────────────
 document.getElementById('spotInterval').textContent = settings.interval;
 document.getElementById('songCounter').textContent = songCount;
-initDB().then(() => checkAuth()).catch(console.error);
+if (localStorage.getItem('ij_gate_ok') === '1') {
+  liberarPainel();
+}
 </script>
 </body>
 </html>
