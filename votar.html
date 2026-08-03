@@ -76,7 +76,7 @@ body{font-family:'Rajdhani',sans-serif;background:var(--black);color:var(--text)
 .queue-meta{font-size:11px;color:var(--text-dim)}
 
 /* TOCANDO AGORA */
-.now-card{display:flex;align-items:center;gap:14px;background:linear-gradient(90deg,rgba(201,168,76,.1),var(--dark2));border:1px solid var(--gold-dim);border-radius:14px;padding:14px;margin-bottom:18px}
+.now-card{display:flex;align-items:center;gap:14px;background:linear-gradient(90deg,rgba(201,168,76,.1),var(--dark2));border:1px solid var(--gold-dim);border-radius:14px;padding:14px;margin-bottom:10px}
 .now-cover{width:56px;height:56px;border-radius:10px;object-fit:cover;flex-shrink:0;background:var(--dark3)}
 .now-info{flex:1;min-width:0}
 .now-label{font-size:10px;letter-spacing:1.5px;color:var(--gold);font-weight:700;text-transform:uppercase;margin-bottom:2px}
@@ -88,6 +88,12 @@ body{font-family:'Rajdhani',sans-serif;background:var(--black);color:var(--text)
 .now-eq span:nth-child(2){height:14px;animation-delay:.2s}
 .now-eq span:nth-child(3){height:9px;animation-delay:.4s}
 @keyframes eq{0%,100%{transform:scaleY(.4)}50%{transform:scaleY(1)}}
+
+.reacoes-row{display:flex;gap:8px;margin-bottom:18px}
+.reacao-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;background:var(--dark3);border:1px solid var(--dark4);border-radius:10px;padding:9px;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s;color:var(--text);font-family:'Rajdhani',sans-serif}
+.reacao-btn:hover{background:var(--dark4)}
+.reacao-btn.ativo-like{border-color:var(--green);color:var(--green);background:rgba(67,160,71,.1)}
+.reacao-btn.ativo-dislike{border-color:var(--red);color:var(--red);background:rgba(229,57,53,.1)}
 
 .pedido-badge{display:flex;align-items:center;gap:6px;flex-shrink:0;background:rgba(201,168,76,.12);border:1px solid var(--gold-dim);border-radius:20px;padding:4px 10px 4px 4px}
 .pedido-badge img{width:22px;height:22px;border-radius:50%;object-fit:cover}
@@ -179,6 +185,7 @@ const LASTFM_API_KEY = '237fc76df95b9ee0911c99aecd41ad2c';
 // ── STATE ───────────────────────────────────────────────────────────────────
 let currentUser = null;
 let pedidoPorTrackId = {};
+let tocandoAtualId = null;
 
 // Chave usada para agrupar votos pelo NOME da música + artista, ignorando
 // de qual álbum/versão específica cada voto veio na Spotify.
@@ -571,6 +578,8 @@ async function carregarFila() {
   const desatualizado = info.atualizado_em && (Date.now() - new Date(info.atualizado_em).getTime() > 60 * 1000);
 
   if (info.tocando) {
+    tocandoAtualId = info.tocando.id;
+    const { likes, dislikes, meuVoto } = await carregarReacoes(info.tocando.id);
     cardEl.innerHTML = `
       <div class="now-card">
         ${info.tocando.capa ? `<img class="now-cover" src="${info.tocando.capa}">` : `<div class="now-cover" style="display:flex;align-items:center;justify-content:center">🎵</div>`}
@@ -580,8 +589,13 @@ async function carregarFila() {
           <div class="now-artist">${info.tocando.artista}</div>
         </div>
         ${renderBadgePedido(info.tocando.nome, info.tocando.artista) || '<div class="now-eq"><span></span><span></span><span></span></div>'}
+      </div>
+      <div class="reacoes-row">
+        <button class="reacao-btn ${meuVoto === 'like' ? 'ativo-like' : ''}" onclick="reagir('like')">👍 ${likes}</button>
+        <button class="reacao-btn ${meuVoto === 'dislike' ? 'ativo-dislike' : ''}" onclick="reagir('dislike')">👎 ${dislikes}</button>
       </div>`;
   } else {
+    tocandoAtualId = null;
     cardEl.innerHTML = '';
   }
 
@@ -609,6 +623,51 @@ async function carregarFila() {
 }
 
 // ── UTILS ─────────────────────────────────────────────────────────────────────
+// ── REAÇÕES (like/dislike na música tocando agora) ───────────────────────────
+const JANELA_REACAO_MS = 10 * 60 * 1000; // mesma janela usada pelo painel para decidir o skip
+
+async function carregarReacoes(trackId) {
+  const desde = new Date(Date.now() - JANELA_REACAO_MS).toISOString();
+  const { data } = await supabaseClient
+    .from('reacoes')
+    .select('tipo,aluno_google_id')
+    .eq('spotify_track_id', trackId)
+    .gt('criado_em', desde);
+
+  const likes = (data || []).filter(r => r.tipo === 'like').length;
+  const dislikes = (data || []).filter(r => r.tipo === 'dislike').length;
+  const meuVoto = (data || []).find(r => r.aluno_google_id === currentUser?.id)?.tipo || null;
+  return { likes, dislikes, meuVoto };
+}
+
+async function reagir(tipo) {
+  if (!tocandoAtualId) return;
+  const desde = new Date(Date.now() - JANELA_REACAO_MS).toISOString();
+  const { data: existente } = await supabaseClient
+    .from('reacoes')
+    .select('id,tipo')
+    .eq('spotify_track_id', tocandoAtualId)
+    .eq('aluno_google_id', currentUser.id)
+    .gt('criado_em', desde)
+    .maybeSingle();
+
+  if (existente) {
+    if (existente.tipo === tipo) {
+      // Já tinha votado igual — remove o voto (permite desfazer)
+      await supabaseClient.from('reacoes').delete().eq('id', existente.id);
+    } else {
+      await supabaseClient.from('reacoes').update({ tipo }).eq('id', existente.id);
+    }
+  } else {
+    await supabaseClient.from('reacoes').insert([{
+      spotify_track_id: tocandoAtualId,
+      aluno_google_id: currentUser.id,
+      tipo
+    }]);
+  }
+  await carregarFila();
+}
+
 function mostrarVotantes(chave) {
   const votantes = pedidoPorTrackId[chave];
   if (!votantes || votantes.length === 0) return;

@@ -949,6 +949,7 @@ async function fetchCurrentTrack() {
     const user = await spotifyFetch('/me');
     if (user) { document.getElementById('spotifyUser').textContent = '🟢 ' + (user.display_name || user.id); document.getElementById('spotifyUser').dataset.loaded = '1'; }
   }
+  verificarSkipPorReacoes(track.id);
 }
 
 async function togglePlayPause() {
@@ -960,8 +961,59 @@ async function spotifyPrev() { await spotifyFetch('/me/player/previous','POST');
 async function spotifyPause() { await spotifyFetch('/me/player/pause','PUT'); }
 async function spotifyPlay()  { await spotifyFetch('/me/player/play','PUT'); }
 
+// ── RETOMAR COM VERIFICAÇÃO ───────────────────────────────────────────────────
+// A Spotify às vezes considera o dispositivo "inativo" depois de ficar pausado
+// por um tempo, e nesse caso o comando de retomar não tem efeito real, mesmo
+// sem dar erro. Aqui a gente confirma se voltou a tocar de verdade e tenta de
+// novo algumas vezes antes de desistir e avisar que precisa de ação manual.
+async function retomarComVerificacao() {
+  await spotifyPlay();
+  isPlaying = true;
+  document.getElementById('playPauseBtn').textContent = '⏸';
+
+  for (let tentativa = 0; tentativa < 3; tentativa++) {
+    await wait(2000);
+    const data = await spotifyFetch('/me/player');
+    if (data && data.is_playing) return true;
+    await spotifyPlay(); // não retomou de verdade — tenta de novo
+  }
+
+  showToast('⚠️ O Spotify não retomou sozinho — pode ser necessário apertar Play manualmente no aparelho da academia.', 'error');
+  return false;
+}
+
 function startPolling() { spotifyPolling = setInterval(fetchCurrentTrack, 3000); }
 function stopPolling()  { if (spotifyPolling) clearInterval(spotifyPolling); }
+
+// ── PULAR MÚSICA POR REAÇÕES NEGATIVAS DOS ALUNOS ────────────────────────────
+let ultimaChecagemReacoes = 0;
+let ultimaFaixaPulada = null;
+
+async function verificarSkipPorReacoes(trackId) {
+  const agora = Date.now();
+  if (agora - ultimaChecagemReacoes < 5000) return; // não checa mais que 1x a cada 5s
+  ultimaChecagemReacoes = agora;
+  if (ultimaFaixaPulada === trackId) return; // já pulou essa mesma execução, evita pular de novo em loop
+
+  const { data: configLimite } = await supabaseClient.from('config').select('valor').eq('chave', 'limite_dislikes').maybeSingle();
+  const limite = parseInt(configLimite?.valor || '0');
+  if (!limite || limite <= 0) return; // recurso desativado se não tiver limite configurado
+
+  const dezMinAtras = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const { data: reacoes } = await supabaseClient
+    .from('reacoes')
+    .select('tipo')
+    .eq('spotify_track_id', trackId)
+    .gt('criado_em', dezMinAtras);
+
+  const negativos = (reacoes || []).filter(r => r.tipo === 'dislike').length;
+  if (negativos >= limite) {
+    ultimaFaixaPulada = trackId;
+    showToast(`👎 Música pulada — ${negativos} reações negativas dos alunos`, 'error');
+    await spotifyNext();
+    setTimeout(fetchCurrentTrack, 800);
+  }
+}
 
 // ── SCHEDULER ─────────────────────────────────────────────────────────────────
 function startScheduler() {
@@ -1022,10 +1074,8 @@ async function playSpotById(id, auto=false) {
       await spotifyPause();
       showToast('⏸ Spotify pausado — tocando spot', 'success');
       await playSpotAudio(spot);
-      await spotifyPlay();
-      isPlaying = true;
-      document.getElementById('playPauseBtn').textContent = '⏸';
-      showToast('▶ Spotify retomado', 'success');
+      const retomou = await retomarComVerificacao();
+      if (retomou) showToast('▶ Spotify retomado', 'success');
     }
   } catch(e) {
     showToast('❌ Erro ao tocar spot: ' + e.message, 'error');
@@ -1769,10 +1819,8 @@ async function fireRecepcao() {
     ctx.close();
   } catch(e) { showToast('❌ Erro ao reproduzir: ' + e.message, 'error'); }
 
-  await spotifyPlay();
-  isPlaying = true;
-  document.getElementById('playPauseBtn').textContent = '⏸';
-  showToast('✅ Chamada concluída — Spotify retomado', 'success');
+  const retomou = await retomarComVerificacao();
+  if (retomou) showToast('✅ Chamada concluída — Spotify retomado', 'success');
   btn.disabled = false; btn.textContent = '📣 Chamar Agora';
 }
 
@@ -2015,10 +2063,8 @@ async function gerarAviso() {
     ctx.close();
   } catch(e) { showToast('❌ Erro ao reproduzir: ' + e.message, 'error'); }
 
-  await spotifyPlay();
-  isPlaying = true;
-  document.getElementById('playPauseBtn').textContent = '⏸';
-  showToast('✅ Aviso concluído — Spotify retomado', 'success');
+  const retomou = await retomarComVerificacao();
+  if (retomou) showToast('✅ Aviso concluído — Spotify retomado', 'success');
 
   // Salvar no histórico
   const vozeNomes = {'pt-BR-Wavenet-B':'Masculina B','pt-BR-Wavenet-A':'Feminina A','pt-BR-Wavenet-D':'Masculina D','pt-BR-Wavenet-C':'Feminina C'};
@@ -2052,10 +2098,8 @@ async function repetirAviso(id) {
   audio.play();
   await new Promise(r => { audio.onended = r; setTimeout(r, 60000); });
   ctx.close();
-  await spotifyPlay();
-  isPlaying = true;
-  document.getElementById('playPauseBtn').textContent = '⏸';
-  showToast('✅ Aviso repetido!', 'success');
+  const retomou = await retomarComVerificacao();
+  if (retomou) showToast('✅ Aviso repetido!', 'success');
 }
 
 function limparHistoricoAvisos() {
@@ -2083,6 +2127,8 @@ async function renderRestricoes() {
   await carregarRestricoes();
   await carregarBanidos();
   const recentes = await carregarAlunosRecentes();
+  const { data: limiteData } = await supabaseClient.from('config').select('valor').eq('chave', 'limite_dislikes').maybeSingle();
+  const limiteDislikes = limiteData?.valor || '';
   const agora = Date.now();
   const banidosAtivos = alunosBanidos.filter(b => new Date(b.banido_ate).getTime() > agora);
   const idsBanidos = banidosAtivos.map(b => b.aluno_google_id);
@@ -2111,6 +2157,18 @@ async function renderRestricoes() {
         <input id="novoArtistaInput" placeholder="Nome do artista..." onkeydown="if(event.key==='Enter')adicionarRestricaoArtista()">
         <button class="btn btn-outline btn-sm" onclick="adicionarRestricaoArtista()">+ Add</button>
       </div>
+    </div>
+  </div>
+
+  <div class="sep"></div>
+  <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:3px;color:var(--gold);margin-bottom:6px">👎 PULAR POR REJEIÇÃO</div>
+  <div class="card" style="margin-bottom:24px">
+    <div class="section-title" style="margin-bottom:4px">Reações Negativas na Música Atual</div>
+    <div style="font-size:13px;color:var(--text-dim);margin-bottom:14px">Os alunos podem curtir ou não curtir a música que está tocando no <code>votar.html</code>. Se o número de reações negativas atingir o limite abaixo, a música é pulada automaticamente.</div>
+    <label class="label">Quantidade de 👎 para pular (deixe vazio ou 0 para desativar)</label>
+    <div style="display:flex;gap:8px;max-width:260px">
+      <input id="limiteDislikesInput" type="number" min="0" placeholder="Ex: 3" value="${limiteDislikes}">
+      <button class="btn btn-gold btn-sm" onclick="salvarLimiteDislikes()">Salvar</button>
     </div>
   </div>
 
@@ -2160,6 +2218,12 @@ async function salvarRestricaoGeneros() {
 }
 async function salvarRestricaoArtistas() {
   await supabaseClient.from('config').upsert([{ chave: 'artistas_bloqueados', valor: restricaoArtistas.join(',') }]);
+}
+
+async function salvarLimiteDislikes() {
+  const valor = document.getElementById('limiteDislikesInput').value.trim();
+  await supabaseClient.from('config').upsert([{ chave: 'limite_dislikes', valor: valor || '0' }]);
+  showToast(valor && parseInt(valor) > 0 ? `✅ Música será pulada com ${valor} reações negativas` : '✅ Recurso desativado', 'success');
 }
 
 async function adicionarRestricaoGenero() {
