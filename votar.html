@@ -33,6 +33,25 @@ body{font-family:'Rajdhani',sans-serif;background:var(--black);color:var(--text)
 .topbar-gym{font-size:11px;color:var(--gold);letter-spacing:1px}
 .logout-btn{background:var(--dark3);border:none;color:var(--text-dim);border-radius:8px;padding:8px 12px;font-size:12px;cursor:pointer;font-family:'Rajdhani',sans-serif;font-weight:700}
 .logout-btn:hover{background:var(--dark4);color:var(--text)}
+.topbar-btn{background:var(--dark3);border:none;color:var(--text-dim);border-radius:8px;padding:8px 11px;font-size:16px;cursor:pointer;flex-shrink:0}
+.topbar-btn:hover{background:var(--dark4);color:var(--text)}
+
+/* MODAL */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:100;display:flex;align-items:center;justify-content:center;padding:20px}
+.modal{background:var(--dark2);border-radius:16px;padding:22px;width:100%;max-width:460px;border:1px solid var(--gold-dim);max-height:80vh;overflow-y:auto}
+.modal-title{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:2px;color:var(--gold);margin-bottom:16px;display:flex;justify-content:space-between;align-items:center}
+.modal-close{background:var(--dark3);border:none;color:var(--text);border-radius:8px;padding:5px 10px;font-size:14px;cursor:pointer}
+.modal-close:hover{background:var(--dark4)}
+.hist-item{display:flex;align-items:center;gap:10px;padding:10px;background:var(--dark3);border-radius:10px;margin-bottom:8px}
+.hist-item img,.rank-item img,.sem-foto-modal{width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0}
+.sem-foto-modal{background:var(--dark4);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}
+.hist-info{flex:1;min-width:0}
+.hist-nome{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist-meta{font-size:11px;color:var(--text-dim)}
+.rank-item{display:flex;align-items:center;gap:12px;padding:10px;background:var(--dark3);border-radius:10px;margin-bottom:8px}
+.rank-pos{font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--gold);width:26px;text-align:center;flex-shrink:0}
+.rank-nome{font-size:14px;font-weight:700;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rank-count{font-family:'Bebas Neue',sans-serif;font-size:17px;color:var(--gold);flex-shrink:0}
 
 .content{flex:1;padding:18px}
 .page-title{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:3px;color:var(--gold);margin-bottom:4px}
@@ -139,6 +158,8 @@ body{font-family:'Rajdhani',sans-serif;background:var(--black);color:var(--text)
       <div class="topbar-name" id="userName">—</div>
       <div class="topbar-gym">🦁 IRON JUNGLE</div>
     </div>
+    <button class="topbar-btn" onclick="abrirHistorico()" title="Histórico de pedidos">📜</button>
+    <button class="topbar-btn" onclick="abrirRanking()" title="Ranking de alunos">🏆</button>
     <button class="logout-btn" onclick="logout()">Sair</button>
   </div>
 
@@ -173,6 +194,20 @@ body{font-family:'Rajdhani',sans-serif;background:var(--black);color:var(--text)
 </div>
 
 <div id="toastEl" class="toast" style="display:none"></div>
+
+<div class="modal-bg" id="modalHistorico" style="display:none">
+  <div class="modal">
+    <div class="modal-title">📜 Histórico de Pedidos <button class="modal-close" onclick="fecharModal('modalHistorico')">✕</button></div>
+    <div id="historicoList"><div class="empty-state">Carregando...</div></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modalRanking" style="display:none">
+  <div class="modal">
+    <div class="modal-title">🏆 Ranking de Alunos <button class="modal-close" onclick="fecharModal('modalRanking')">✕</button></div>
+    <div id="rankingList"><div class="empty-state">Carregando...</div></div>
+  </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -673,6 +708,67 @@ function mostrarVotantes(chave) {
   if (!votantes || votantes.length === 0) return;
   const nomes = votantes.map(v => v.aluno_nome).join(', ');
   showToast('🗳️ ' + nomes, '');
+}
+
+// ── HISTÓRICO E RANKING ──────────────────────────────────────────────────────
+function fecharModal(id) {
+  document.getElementById(id).style.display = 'none';
+}
+
+async function abrirHistorico() {
+  document.getElementById('modalHistorico').style.display = 'flex';
+  const el = document.getElementById('historicoList');
+  el.innerHTML = '<div class="empty-state">Carregando...</div>';
+
+  const { data, error } = await supabaseClient
+    .from('pedidos')
+    .select('musica_nome,artista_nome,aluno_nome,aluno_foto,criado_em')
+    .order('criado_em', { ascending: false })
+    .limit(50);
+
+  if (error || !data || data.length === 0) { el.innerHTML = '<div class="empty-state">📭 Nenhum pedido ainda.</div>'; return; }
+
+  el.innerHTML = data.map(p => {
+    const inicial = (p.aluno_nome || '?').charAt(0).toUpperCase();
+    const quando = new Date(p.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    return `<div class="hist-item">
+      ${p.aluno_foto ? `<img src="${p.aluno_foto}">` : `<div class="sem-foto-modal">${inicial}</div>`}
+      <div class="hist-info">
+        <div class="hist-nome">${p.musica_nome} — ${p.artista_nome}</div>
+        <div class="hist-meta">${p.aluno_nome} · ${quando}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function abrirRanking() {
+  document.getElementById('modalRanking').style.display = 'flex';
+  const el = document.getElementById('rankingList');
+  el.innerHTML = '<div class="empty-state">Carregando...</div>';
+
+  const { data, error } = await supabaseClient
+    .from('pedidos')
+    .select('aluno_google_id,aluno_nome,aluno_foto')
+    .limit(500);
+
+  if (error || !data || data.length === 0) { el.innerHTML = '<div class="empty-state">📭 Nenhum voto ainda.</div>'; return; }
+
+  const contagem = {};
+  data.forEach(p => {
+    if (!contagem[p.aluno_google_id]) contagem[p.aluno_google_id] = { aluno_nome: p.aluno_nome, aluno_foto: p.aluno_foto, votos: 0 };
+    contagem[p.aluno_google_id].votos++;
+  });
+  const ranking = Object.values(contagem).sort((a, b) => b.votos - a.votos).slice(0, 20);
+
+  el.innerHTML = ranking.map((r, i) => {
+    const inicial = (r.aluno_nome || '?').charAt(0).toUpperCase();
+    return `<div class="rank-item">
+      <div class="rank-pos">${i + 1}</div>
+      ${r.aluno_foto ? `<img src="${r.aluno_foto}">` : `<div class="sem-foto-modal">${inicial}</div>`}
+      <div class="rank-nome">${r.aluno_nome}</div>
+      <div class="rank-count">${r.votos}</div>
+    </div>`;
+  }).join('');
 }
 
 function showToast(msg, type='') {
