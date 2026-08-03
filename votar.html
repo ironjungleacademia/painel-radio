@@ -178,6 +178,7 @@ const LASTFM_API_KEY = '237fc76df95b9ee0911c99aecd41ad2c';
 
 // ── STATE ───────────────────────────────────────────────────────────────────
 let currentUser = null;
+let pedidoPorTrackId = {};
 let catalogToken = null;
 let allowedGenres = [];
 let artistasBloqueados = [];
@@ -536,7 +537,7 @@ async function carregarFila() {
 
   // Descobre quais faixas da fila foram pedidas por alunos (para mostrar quem votou)
   const idsNaFila = [info.tocando?.id, ...(info.proximas || []).map(t => t.id)].filter(Boolean);
-  let pedidoPorTrackId = {};
+  pedidoPorTrackId = {};
   if (idsNaFila.length > 0) {
     const { data: pedidosFeitos } = await supabaseClient
       .from('pedidos')
@@ -553,14 +554,8 @@ async function carregarFila() {
   function renderBadgePedido(id) {
     const votantes = pedidoPorTrackId[id];
     if (!votantes || votantes.length === 0) return '';
-    const primeiro = votantes[0];
-    const extras = votantes.length - 1;
-    const inicial = (primeiro.aluno_nome || '?').charAt(0).toUpperCase();
-    const todosOsNomes = votantes.map(v => v.aluno_nome).join(', ');
-    return `<div class="pedido-badge" title="${todosOsNomes}">
-      ${primeiro.aluno_foto ? `<img src="${primeiro.aluno_foto}">` : `<div class="sem-foto">${inicial}</div>`}
-      <span class="pedido-badge-nome">${primeiro.aluno_nome}${extras > 0 ? ' +' + extras : ''}</span>
-    </div>`;
+    const n = votantes.length;
+    return `<div class="voto-badge" style="cursor:pointer" onclick="mostrarVotantes('${id}')" title="Toque para ver quem votou">🗳️ ${n} voto${n > 1 ? 's' : ''}</div>`;
   }
 
   // Aviso se a informação estiver muito desatualizada (painel da academia offline)
@@ -605,6 +600,13 @@ async function carregarFila() {
 }
 
 // ── UTILS ─────────────────────────────────────────────────────────────────────
+function mostrarVotantes(trackId) {
+  const votantes = pedidoPorTrackId[trackId];
+  if (!votantes || votantes.length === 0) return;
+  const nomes = votantes.map(v => v.aluno_nome).join(', ');
+  showToast('🗳️ ' + nomes, '');
+}
+
 function showToast(msg, type='') {
   const el = document.getElementById('toastEl');
   el.textContent = msg; el.className = 'toast ' + type; el.style.display = 'block';
