@@ -52,6 +52,9 @@ body{font-family:'Rajdhani',sans-serif;background:var(--black);color:var(--text)
 .rank-pos{font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--gold);width:26px;text-align:center;flex-shrink:0}
 .rank-nome{font-size:14px;font-weight:700;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rank-count{font-family:'Bebas Neue',sans-serif;font-size:17px;color:var(--gold);flex-shrink:0}
+.rank-tabs{display:flex;gap:6px;margin-bottom:14px}
+.rank-tab{flex:1;background:var(--dark3);border:1px solid var(--dark4);color:var(--text-dim);border-radius:8px;padding:8px 4px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Rajdhani',sans-serif}
+.rank-tab.ativo{background:var(--gold);color:var(--black);border-color:var(--gold)}
 
 .content{flex:1;padding:18px}
 .page-title{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:3px;color:var(--gold);margin-bottom:4px}
@@ -159,13 +162,13 @@ body{font-family:'Rajdhani',sans-serif;background:var(--black);color:var(--text)
       <div class="topbar-gym">🦁 IRON JUNGLE</div>
     </div>
     <button class="topbar-btn" onclick="abrirHistorico()" title="Histórico de pedidos">📜</button>
-    <button class="topbar-btn" onclick="abrirRanking()" title="Ranking de alunos">🏆</button>
+    <button class="topbar-btn" onclick="abrirRanking()" title="Ranking">🏆</button>
     <button class="logout-btn" onclick="logout()">Sair</button>
   </div>
 
   <div class="content">
     <div class="page-title">Peça sua Música</div>
-    <div class="page-sub">Busque uma música e peça para tocar na academia.</div>
+    <div class="page-sub">Busque uma música e peça para tocar na academia.<br>⚠️ Músicas que não condizem com a identidade da academia serão puladas.</div>
 
     <div id="statusBox" class="status-box">
       <div class="status-icon">⏳</div>
@@ -204,7 +207,12 @@ body{font-family:'Rajdhani',sans-serif;background:var(--black);color:var(--text)
 
 <div class="modal-bg" id="modalRanking" style="display:none">
   <div class="modal">
-    <div class="modal-title">🏆 Ranking de Alunos <button class="modal-close" onclick="fecharModal('modalRanking')">✕</button></div>
+    <div class="modal-title">🏆 Ranking <button class="modal-close" onclick="fecharModal('modalRanking')">✕</button></div>
+    <div class="rank-tabs">
+      <button class="rank-tab" id="tabAlunos" onclick="mudarAbaRanking('alunos')">👤 Alunos</button>
+      <button class="rank-tab" id="tabCurtidas" onclick="mudarAbaRanking('curtidas')">👍 Curtidas</button>
+      <button class="rank-tab" id="tabRejeitadas" onclick="mudarAbaRanking('rejeitadas')">👎 Rejeitadas</button>
+    </div>
     <div id="rankingList"><div class="empty-state">Carregando...</div></div>
   </div>
 </div>
@@ -221,6 +229,8 @@ const LASTFM_API_KEY = '237fc76df95b9ee0911c99aecd41ad2c';
 let currentUser = null;
 let pedidoPorTrackId = {};
 let tocandoAtualId = null;
+let tocandoAtualNome = null;
+let tocandoAtualArtista = null;
 
 // Chave usada para agrupar votos pelo NOME da música + artista, ignorando
 // de qual álbum/versão específica cada voto veio na Spotify.
@@ -618,6 +628,8 @@ async function carregarFila() {
 
   if (info.tocando) {
     tocandoAtualId = info.tocando.id;
+    tocandoAtualNome = info.tocando.nome;
+    tocandoAtualArtista = info.tocando.artista;
     const { likes, dislikes, meuVoto } = await carregarReacoes(info.tocando.id);
     cardEl.innerHTML = `
       <div class="now-card">
@@ -701,7 +713,9 @@ async function reagir(tipo) {
     await supabaseClient.from('reacoes').insert([{
       spotify_track_id: tocandoAtualId,
       aluno_google_id: currentUser.id,
-      tipo
+      tipo,
+      musica_nome: tocandoAtualNome,
+      artista_nome: tocandoAtualArtista
     }]);
   }
   await carregarFila();
@@ -745,11 +759,38 @@ async function abrirHistorico() {
   }).join('');
 }
 
+let abaRankingAtual = 'alunos';
+
 async function abrirRanking() {
   document.getElementById('modalRanking').style.display = 'flex';
+  abaRankingAtual = 'alunos';
+  atualizarTabsRanking();
+  await carregarRankingAtivo();
+}
+
+function mudarAbaRanking(aba) {
+  abaRankingAtual = aba;
+  atualizarTabsRanking();
+  carregarRankingAtivo();
+}
+
+function atualizarTabsRanking() {
+  document.getElementById('tabAlunos').classList.toggle('ativo', abaRankingAtual === 'alunos');
+  document.getElementById('tabCurtidas').classList.toggle('ativo', abaRankingAtual === 'curtidas');
+  document.getElementById('tabRejeitadas').classList.toggle('ativo', abaRankingAtual === 'rejeitadas');
+}
+
+async function carregarRankingAtivo() {
   const el = document.getElementById('rankingList');
   el.innerHTML = '<div class="empty-state">Carregando...</div>';
+  if (abaRankingAtual === 'alunos') {
+    await renderRankingAlunos(el);
+  } else {
+    await renderRankingMusicas(el, abaRankingAtual === 'curtidas' ? 'like' : 'dislike');
+  }
+}
 
+async function renderRankingAlunos(el) {
   const { data, error } = await supabaseClient
     .from('pedidos')
     .select('aluno_google_id,aluno_nome,aluno_foto')
@@ -773,6 +814,39 @@ async function abrirRanking() {
       <div class="rank-count">${r.votos}</div>
     </div>`;
   }).join('');
+}
+
+async function renderRankingMusicas(el, tipo) {
+  const { data, error } = await supabaseClient
+    .from('reacoes')
+    .select('musica_nome,artista_nome,tipo')
+    .eq('tipo', tipo)
+    .limit(2000);
+
+  const validas = (data || []).filter(r => r.musica_nome); // ignora reações antigas sem nome salvo
+  if (error || validas.length === 0) {
+    el.innerHTML = `<div class="empty-state">📭 Nenhuma reação ${tipo === 'like' ? '👍' : '👎'} registrada ainda.</div>`;
+    return;
+  }
+
+  const contagem = {};
+  validas.forEach(r => {
+    const chave = chaveMusica(r.musica_nome, r.artista_nome);
+    if (!contagem[chave]) contagem[chave] = { nome: r.musica_nome, artista: r.artista_nome, votos: 0 };
+    contagem[chave].votos++;
+  });
+  const ranking = Object.values(contagem).sort((a, b) => b.votos - a.votos).slice(0, 20);
+  const emoji = tipo === 'like' ? '👍' : '👎';
+
+  el.innerHTML = ranking.map((r, i) => `
+    <div class="rank-item">
+      <div class="rank-pos">${i + 1}</div>
+      <div class="rank-nome">
+        <div>${r.nome}</div>
+        <div style="font-size:11px;color:var(--text-dim);font-weight:400">${r.artista}</div>
+      </div>
+      <div class="rank-count">${emoji} ${r.votos}</div>
+    </div>`).join('');
 }
 
 function showToast(msg, type='') {
