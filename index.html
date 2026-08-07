@@ -545,6 +545,9 @@ let isSpotPlaying = false;
 let spotifyPolling = null;
 let schedulerInterval = null;
 let isPlaying = true;
+let pausadoManualmente = false; // true só quando a RECEPÇÃO pausou de propósito pelo botão
+let ultimaTentativaAutoResume = 0;
+let stallDetectadoDesde = null;
 let mixCtx = null;
 let mixPlaying = false;
 let ttsBlob = null;
@@ -950,11 +953,42 @@ async function fetchCurrentTrack() {
     if (user) { document.getElementById('spotifyUser').textContent = '🟢 ' + (user.display_name || user.id); document.getElementById('spotifyUser').dataset.loaded = '1'; }
   }
   verificarSkipPorReacoes(track.id);
+  verificarAutoResumeQuedaConexao();
+}
+
+// ── AUTO-RETOMAR EM QUEDAS DE CONEXÃO/INSTABILIDADE ──────────────────────────
+// Cobre o caso em que a própria Spotify pausa sozinha (ex: internet da academia
+// engasgando) — diferente da pausa proposital de spots/avisos, que já tem sua
+// própria verificação (retomarComVerificacao). Aqui a gente detecta quando a
+// música deveria estar tocando (ninguém pausou manualmente, não é um spot em
+// andamento) mas a Spotify está reportando pausada, e tenta retomar sozinho.
+async function verificarAutoResumeQuedaConexao() {
+  if (isPlaying) { stallDetectadoDesde = null; return; } // está tocando, nada a fazer
+  if (pausadoManualmente) return; // a recepção pausou de propósito, não mexe
+  if (isSpotPlaying) return; // pausa esperada, um spot está rodando agora
+
+  if (!stallDetectadoDesde) {
+    stallDetectadoDesde = Date.now();
+    showToast('⚠️ Conexão instável detectada — tentando retomar sozinho...', 'error');
+  }
+
+  const agora = Date.now();
+  if (agora - ultimaTentativaAutoResume < 3000) return; // não insiste mais que 1x a cada 3s (limite do próprio ciclo de checagem)
+  ultimaTentativaAutoResume = agora;
+
+  await spotifyPlay();
+  setTimeout(async () => {
+    const data = await spotifyFetch('/me/player');
+    if (data && data.is_playing) {
+      showToast('✅ Reprodução retomada automaticamente', 'success');
+      stallDetectadoDesde = null;
+    }
+  }, 2000);
 }
 
 async function togglePlayPause() {
-  if (isPlaying) { await spotifyFetch('/me/player/pause','PUT'); isPlaying=false; document.getElementById('playPauseBtn').textContent='▶'; }
-  else { await spotifyFetch('/me/player/play','PUT'); isPlaying=true; document.getElementById('playPauseBtn').textContent='⏸'; }
+  if (isPlaying) { await spotifyFetch('/me/player/pause','PUT'); isPlaying=false; pausadoManualmente=true; document.getElementById('playPauseBtn').textContent='▶'; }
+  else { await spotifyFetch('/me/player/play','PUT'); isPlaying=true; pausadoManualmente=false; document.getElementById('playPauseBtn').textContent='⏸'; }
 }
 async function spotifyNext() { await spotifyFetch('/me/player/next','POST'); setTimeout(fetchCurrentTrack,800); }
 async function spotifyPrev() { await spotifyFetch('/me/player/previous','POST'); setTimeout(fetchCurrentTrack,800); }
@@ -969,6 +1003,7 @@ async function spotifyPlay()  { await spotifyFetch('/me/player/play','PUT'); }
 async function retomarComVerificacao() {
   await spotifyPlay();
   isPlaying = true;
+  pausadoManualmente = false;
   document.getElementById('playPauseBtn').textContent = '⏸';
 
   for (let tentativa = 0; tentativa < 3; tentativa++) {
@@ -1803,6 +1838,7 @@ async function fireRecepcao() {
   const audioUrl = await generateGoogleTTS(text, voiceName);
   if (!audioUrl) { btn.disabled=false; btn.textContent='📣 Chamar Agora'; return; }
 
+  pausadoManualmente = true;
   await spotifyPause();
   await playRadioSignal();
   await wait(300);
@@ -2046,6 +2082,7 @@ async function gerarAviso() {
   const audioUrl = await generateGoogleTTS(texto, voz);
   if (!audioUrl) { btn.disabled=false; btn.textContent='📢 Gerar e Tocar Agora'; return; }
 
+  pausadoManualmente = true;
   await spotifyPause();
   await playRadioSignal();
   await wait(300);
@@ -2086,6 +2123,7 @@ async function repetirAviso(id) {
     if (!audioUrl) return;
     aviso.audioUrl = audioUrl;
   }
+  pausadoManualmente = true;
   await spotifyPause();
   await playRadioSignal();
   await wait(300);
