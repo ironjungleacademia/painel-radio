@@ -339,6 +339,7 @@ select option{background:var(--dark2)}
       <option value="dance">🎹 Dance / Eletrônico</option>
       <option value="pop">🎵 Pop</option>
       <option value="hiphop">🎤 Hip-Hop</option>
+      <option value="comemorativa">🎉 Datas Comemorativas</option>
       <option value="custom">📁 Upload personalizado...</option>
     </select>
     <div id="customInstrumentalUpload" style="display:none;margin-bottom:14px">
@@ -1191,6 +1192,7 @@ function getSampleUrl(genre) {
     pop:    ['pop-1.mp3','pop-2.mp3','pop-3.mp3','pop-4.mp3'],
     hiphop: ['rap-1.mp3','rap-2.mp3','rap-3.mp3','rap-4.mp3'],
     dance:  [],
+    comemorativa: ['comemorativa-1.mp3','comemorativa-2.mp3','comemorativa-3.mp3','comemorativa-4.mp3'],
   };
   const lista = samples[genre];
   if (!lista || lista.length === 0) return null;
@@ -1270,7 +1272,7 @@ function renderSpots() {
 }
 
 function renderSpotItem(spot, showEdit=false) {
-  const icons = {rock:'🎸',metal:'🎸',dance:'🎹',pop:'🎵',hiphop:'🎤','':'🎙️',custom:'📁'};
+  const icons = {rock:'🎸',metal:'🎸',dance:'🎹',pop:'🎵',hiphop:'🎤',comemorativa:'🎉','':'🎙️',custom:'📁'};
   const icon = icons[spot.instrumental] || '🎙️';
   const totalAgendamentos = Object.values(spot.schedule || {}).reduce((a,v)=>a+(v.length||0),0);
   const agendado = totalAgendamentos > 0 ? `<span class="badge badge-blue">⏰ ${totalAgendamentos} horário(s)</span>` : '';
