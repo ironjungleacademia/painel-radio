@@ -143,6 +143,7 @@ select option{background:var(--dark2)}
 /* GRID */
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.grid-4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px}
 
 /* STAT CARD */
 .stat-card{background:var(--dark2);border-radius:12px;padding:18px;border:1px solid var(--dark3);position:relative;overflow:hidden}
@@ -683,6 +684,20 @@ async function publicarFilaAtual() {
     { chave: 'fila_publica', valor: JSON.stringify({ tocando, proximas, atualizado_em: new Date().toISOString() }) }
   ]);
 }
+
+// ── ALUNOS ONLINE AGORA (Realtime Presence) ──────────────────────────────────
+let alunosOnlineAgora = 0;
+
+function iniciarEscutaPresenca() {
+  const canal = supabaseClient.channel('alunos-online');
+  canal.on('presence', { event: 'sync' }, () => {
+    const state = canal.presenceState();
+    alunosOnlineAgora = Object.keys(state).length;
+    const el = document.getElementById('alunosOnlineCount');
+    if (el) el.textContent = alunosOnlineAgora;
+  });
+  canal.subscribe();
+}
 async function spotifyPublicFetch(endpoint) {
   if (!clientCredToken) await getClientCredToken();
   try {
@@ -872,6 +887,7 @@ async function checkAuth() {
     setInterval(enviarPedidosParaFila, 5 * 1000); // checa pedidos dos alunos a cada 5s (o mais rápido viável)
     publicarFilaAtual();
     setInterval(publicarFilaAtual, 10 * 1000); // publica a fila real da Spotify para os alunos verem
+    iniciarEscutaPresenca();
   }
 }
 
@@ -1250,10 +1266,11 @@ function renderDashboard() {
   return `
   <div class="page-title">Dashboard</div>
   <div class="page-sub">Painel de controle — Iron Jungle Gym</div>
-  <div class="grid-3" style="margin-bottom:20px">
+  <div class="grid-4" style="margin-bottom:20px">
     <div class="stat-card gold"><div class="stat-icon-bg">🎙️</div><div class="stat-label">Total de Spots</div><div class="stat-value" style="color:var(--gold)">${total}</div></div>
     <div class="stat-card green"><div class="stat-icon-bg">✅</div><div class="stat-label">Spots Ativos</div><div class="stat-value" style="color:var(--green)">${ativos}</div></div>
     <div class="stat-card red"><div class="stat-icon-bg">▶</div><div class="stat-label">Spots Tocados</div><div class="stat-value" style="color:var(--red)">${tocados}</div></div>
+    <div class="stat-card green"><div class="stat-icon-bg">🟢</div><div class="stat-label">Alunos Online Agora</div><div class="stat-value" id="alunosOnlineCount" style="color:var(--green)">${alunosOnlineAgora}</div></div>
   </div>
   <div class="grid-3" style="margin-bottom:16px">
     <div class="card card-gold">

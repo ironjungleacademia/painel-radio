@@ -168,7 +168,8 @@ body{font-family:'Rajdhani',sans-serif;background:var(--black);color:var(--text)
 
   <div class="content">
     <div class="page-title">Peça sua Música</div>
-    <div class="page-sub">Busque uma música e peça para tocar na academia.<br>⚠️ Músicas fora da identidade da academia serão puladas.<br> (Estilo da academia: rock, metal, hip-hop, rap, eletrônica, dance-pop) .</div>
+    <div class="page-sub">Busque uma música e peça para tocar na academia.<br>⚠️ Músicas fora do estilo da academia serão puladas. Estilo da academia: rock, metal, hip-hop, rap, eletrônica, dance-pop.</div>
+    <div id="alunosAtivosBadge" style="font-size:12px;color:var(--green);font-weight:700;margin-bottom:14px">🟢 Carregando...</div>
 
     <div id="statusBox" class="status-box">
       <div class="status-icon">⏳</div>
@@ -253,9 +254,11 @@ async function loginGoogle() {
 }
 
 async function logout() {
+  await sairDaPresenca();
   await supabaseClient.auth.signOut();
   currentUser = null;
   if (queuePollInterval) clearInterval(queuePollInterval);
+  if (heartbeatInterval) clearInterval(heartbeatInterval);
   document.getElementById('authScreen').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
 }
@@ -288,13 +291,58 @@ async function onLoggedIn(session) {
   await verificarStatusVotacao();
   await carregarFila();
   await carregarVotacaoPendente();
+  entrarNaPresenca(nome);
+  enviarHeartbeat(nome);
+  await carregarAlunosAtivos();
 
   if (queuePollInterval) clearInterval(queuePollInterval);
   queuePollInterval = setInterval(async () => {
     await verificarStatusVotacao();
     await carregarFila();
     await carregarVotacaoPendente();
+    await carregarAlunosAtivos();
   }, 8000);
+
+  if (heartbeatInterval) clearInterval(heartbeatInterval);
+  heartbeatInterval = setInterval(() => enviarHeartbeat(nome), 60 * 1000);
+}
+
+// ── PRESENÇA (Realtime) E ATIVIDADE RECENTE (heartbeat) ──────────────────────
+let presenceChannel = null;
+let heartbeatInterval = null;
+
+function entrarNaPresenca(nome) {
+  presenceChannel = supabaseClient.channel('alunos-online', {
+    config: { presence: { key: currentUser.id } }
+  });
+  presenceChannel.subscribe(async (status) => {
+    if (status === 'SUBSCRIBED') {
+      await presenceChannel.track({ nome, online_em: new Date().toISOString() });
+    }
+  });
+}
+
+async function sairDaPresenca() {
+  if (!presenceChannel) return;
+  await presenceChannel.untrack();
+  supabaseClient.removeChannel(presenceChannel);
+  presenceChannel = null;
+}
+
+async function enviarHeartbeat(nome) {
+  if (!currentUser) return;
+  await supabaseClient.from('atividade').upsert([{
+    aluno_google_id: currentUser.id,
+    aluno_nome: nome,
+    ultimo_sinal: new Date().toISOString()
+  }]);
+}
+
+async function carregarAlunosAtivos() {
+  const cincoMinAtras = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const { data } = await supabaseClient.from('atividade').select('aluno_google_id').gt('ultimo_sinal', cincoMinAtras);
+  const el = document.getElementById('alunosAtivosBadge');
+  if (el) el.textContent = `🟢 ${(data || []).length} ativo(s) nos últimos 5 min`;
 }
 
 // ── BANIMENTO ────────────────────────────────────────────────────────────────
