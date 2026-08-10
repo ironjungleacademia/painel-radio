@@ -971,6 +971,24 @@ async function fetchCurrentTrack() {
   }
   verificarSkipPorReacoes(track.id);
   verificarAutoResumeQuedaConexao();
+  marcarComoTocado(track);
+}
+
+// ── MARCAR PEDIDO COMO REALMENTE TOCADO ──────────────────────────────────────
+// "enviado" (na fila real) acontece rápido demais para servir de trava contra
+// um aluno pedir várias músicas seguidas. Aqui a gente confirma de verdade que
+// a música tocou, comparando com o que a Spotify está tocando agora — isso é
+// o que libera o aluno para pedir de novo (regra da fila justa).
+async function marcarComoTocado(track) {
+  const nome = track.name;
+  const artista = (track.artists || []).map(a => a.name).join(', ');
+  await supabaseClient
+    .from('pedidos')
+    .update({ tocado_em: new Date().toISOString() })
+    .eq('status', 'enviado')
+    .is('tocado_em', null)
+    .ilike('musica_nome', nome)
+    .ilike('artista_nome', artista);
 }
 
 // ── AUTO-RETOMAR EM QUEDAS DE CONEXÃO/INSTABILIDADE ──────────────────────────

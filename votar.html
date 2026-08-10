@@ -396,7 +396,7 @@ async function verificarStatusVotacao() {
 
   if (!meuUltimo) {
     podeVotarAgora = true;
-  } else if (meuUltimo.status === 'enviado') {
+  } else if (meuUltimo.tocado_em) {
     podeVotarAgora = true;
   } else {
     const { data: outros } = await supabaseClient
