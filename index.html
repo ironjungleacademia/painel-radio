@@ -1070,11 +1070,20 @@ function checkScheduledSpots() {
     spot.lastScheduledPlay = nowKey;
     saveSpots();
     showToast('⏰ Spot agendado: ' + spot.name, 'success');
-    playSpotById(spot.id, true);
+    playSpotById(spot.id, true, 'agendado', currentTime);
   });
 }
 
 // ── AUTO SPOT ─────────────────────────────────────────────────────────────────
+function embaralhar(array) {
+  const a = [...array];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 async function triggerAutoSpot() {
   // Reset de segurança — garantir que isSpotPlaying não ficou travado
   isSpotPlaying = false;
@@ -1090,17 +1099,32 @@ async function triggerAutoSpot() {
     return;
   }
 
-  const spot = activeSpots[Math.floor(Math.random() * activeSpots.length)];
+  // "Baralho" de spots: toca todos uma vez, em ordem aleatória, antes de repetir
+  // qualquer um — em vez de sortear solto (que pode repetir o mesmo em seguida).
+  const idsAtivos = activeSpots.map(s => s.id);
+  let baralho = JSON.parse(localStorage.getItem('ij_spot_baralho') || '[]');
+  baralho = baralho.filter(id => idsAtivos.includes(id)); // remove ids que não existem/ativos mais
+
+  if (baralho.length === 0) {
+    baralho = embaralhar(idsAtivos); // acabou o baralho — embaralha de novo com os spots atuais
+  }
+
+  const proximoId = baralho.shift();
+  localStorage.setItem('ij_spot_baralho', JSON.stringify(baralho));
+
+  const spot = spots.find(s => s.id === proximoId);
+  if (!spot) return; // segurança, não deveria acontecer
   showToast('🎙️ Tocando spot: ' + spot.name, 'success');
-  await playSpotById(spot.id, true);
+  await playSpotById(spot.id, true, 'aleatorio');
 }
 
-async function playSpotById(id, auto=false) {
+async function playSpotById(id, auto=false, motivo='manual', horarioAgendado=null) {
   const spot = spots.find(s => s.id === id);
   if (!spot || isSpotPlaying) return;
   isSpotPlaying = true;
   spot.playCount = (spot.playCount || 0) + 1;
   saveSpots();
+  logSpotPlay(spot.name, motivo, horarioAgendado);
 
   try {
     if (spot.tocarJunto) {
@@ -1214,6 +1238,7 @@ function showPage(page) {
   else if (page === 'agenda') content.innerHTML = renderAgenda();
   else if (page === 'avisos') content.innerHTML = renderAvisos();
   else if (page === 'restricoes') renderRestricoes();
+  else if (page === 'historicoSpots') content.innerHTML = renderHistoricoSpots();
   else if (page === 'config') content.innerHTML = renderConfig();
 }
 
@@ -1230,7 +1255,7 @@ function renderDashboard() {
     <div class="stat-card green"><div class="stat-icon-bg">✅</div><div class="stat-label">Spots Ativos</div><div class="stat-value" style="color:var(--green)">${ativos}</div></div>
     <div class="stat-card red"><div class="stat-icon-bg">▶</div><div class="stat-label">Spots Tocados</div><div class="stat-value" style="color:var(--red)">${tocados}</div></div>
   </div>
-  <div class="grid-2" style="margin-bottom:16px">
+  <div class="grid-3" style="margin-bottom:16px">
     <div class="card card-gold">
       <div class="section-title">📣 Chamada à Recepção</div>
       <div style="font-size:14px;color:var(--text-dim);margin-bottom:14px">Toca imediatamente via Google TTS, pausando o Spotify.</div>
@@ -1240,6 +1265,11 @@ function renderDashboard() {
       <div class="section-title">⏰ Spots Agendados</div>
       <div style="font-size:14px;color:var(--text-dim);margin-bottom:14px">${agendados} spot(s) com agendamento ativo.</div>
       <button class="btn btn-outline btn-full" onclick="showPage('agenda')">📅 Ver Agenda</button>
+    </div>
+    <div class="card">
+      <div class="section-title">📜 Histórico de Spots</div>
+      <div style="font-size:14px;color:var(--text-dim);margin-bottom:14px">Veja quando cada spot tocou de verdade.</div>
+      <button class="btn btn-outline btn-full" onclick="showPage('historicoSpots')">📜 Ver Histórico</button>
     </div>
   </div>
   <div class="card">
@@ -1806,6 +1836,61 @@ function saveSpots() {
   localStorage.setItem('ij_spots', JSON.stringify(spotsParaSalvar));
 }
 function saveSettings() { localStorage.setItem('ij_settings', JSON.stringify(settings)); document.getElementById('spotInterval').textContent = settings.interval; }
+
+// ── HISTÓRICO DE SPOTS TOCADOS ────────────────────────────────────────────────
+function logSpotPlay(nome, motivo, horarioAgendado = null) {
+  let log = JSON.parse(localStorage.getItem('ij_spot_log') || '[]');
+  log.unshift({ nome, motivo, horario: new Date().toISOString(), horarioAgendado });
+  if (log.length > 200) log = log.slice(0, 200); // guarda só os 200 mais recentes
+  localStorage.setItem('ij_spot_log', JSON.stringify(log));
+}
+
+function limparHistoricoSpots() {
+  if (!confirm('Apagar todo o histórico de spots tocados?')) return;
+  localStorage.setItem('ij_spot_log', '[]');
+  showPage('historicoSpots');
+}
+
+function renderHistoricoSpots() {
+  const log = JSON.parse(localStorage.getItem('ij_spot_log') || '[]');
+  const motivoInfo = {
+    agendado: { label: '📅 Agendado', badge: 'badge-blue' },
+    aleatorio: { label: '🎲 Aleatório', badge: 'badge-gold' },
+    manual: { label: '👆 Manual', badge: 'badge-green' }
+  };
+
+  return `
+  <div class="flex-between" style="margin-bottom:6px">
+    <div class="page-title">📜 Histórico de Spots</div>
+    <button class="btn btn-dark btn-sm" onclick="limparHistoricoSpots()">🗑 Limpar histórico</button>
+  </div>
+  <div class="page-sub">Últimas ${log.length} execuções — confira se os agendados estão tocando na hora certa.</div>
+  <div class="card">
+    ${log.length === 0 ? '<div style="text-align:center;padding:30px;color:var(--text-dim)">📭 Nenhum spot foi tocado ainda.</div>' :
+      log.map(l => {
+        const dataHora = new Date(l.horario);
+        const horaFormatada = dataHora.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const info = motivoInfo[l.motivo] || motivoInfo.manual;
+        let atrasoHtml = '';
+        if (l.motivo === 'agendado' && l.horarioAgendado) {
+          const [hAg, mAg] = l.horarioAgendado.split(':').map(Number);
+          const esperado = new Date(dataHora);
+          esperado.setHours(hAg, mAg, 0, 0);
+          const diffMin = Math.round((dataHora - esperado) / 60000);
+          const cor = Math.abs(diffMin) <= 2 ? 'var(--green)' : (Math.abs(diffMin) <= 5 ? 'var(--gold)' : 'var(--red)');
+          atrasoHtml = `<div class="spot-meta">Agendado p/ ${l.horarioAgendado} · <span style="color:${cor};font-weight:700">${diffMin >= 0 ? '+' : ''}${diffMin} min</span></div>`;
+        }
+        return `<div class="spot-item">
+          <div class="spot-cover">🎙️</div>
+          <div class="spot-info">
+            <div class="spot-name">${l.nome} <span class="badge ${info.badge}">${info.label}</span></div>
+            <div class="spot-meta">${horaFormatada}</div>
+            ${atrasoHtml}
+          </div>
+        </div>`;
+      }).join('')}
+  </div>`;
+}
 
 async function reloadVoices() {
   showToast('🔄 Carregando vozes...', '');
