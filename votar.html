@@ -396,16 +396,8 @@ async function verificarStatusVotacao() {
 
   if (!meuUltimo) {
     podeVotarAgora = true;
-  } else if (meuUltimo.tocado_em) {
-    podeVotarAgora = true;
   } else {
-    const { data: outros } = await supabaseClient
-      .from('pedidos')
-      .select('id')
-      .neq('aluno_google_id', currentUser.id)
-      .gt('criado_em', meuUltimo.criado_em)
-      .limit(1);
-    podeVotarAgora = !!(outros && outros.length > 0);
+    podeVotarAgora = !!meuUltimo.tocado_em;
   }
 
   if (podeVotarAgora) {
@@ -413,7 +405,7 @@ async function verificarStatusVotacao() {
     box.innerHTML = `<div class="status-icon">✅</div><div class="status-text">Você já pode <b>pedir uma música</b>!</div>`;
   } else {
     box.className = 'status-box blocked';
-    box.innerHTML = `<div class="status-icon">⏳</div><div class="status-text">Você já pediu uma música. Você poderá pedir de novo quando <b>outro aluno pedir</b> ou quando <b>sua música tocar</b>.</div>`;
+    box.innerHTML = `<div class="status-icon">⏳</div><div class="status-text">Você já pediu uma música. Você poderá pedir de novo quando <b>sua música tocar</b>.</div>`;
   }
   renderizarResultados(ultimosResultados);
 }
