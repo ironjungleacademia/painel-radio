@@ -847,6 +847,10 @@ async function refreshToken() {
   if (data.access_token) {
     accessToken = data.access_token;
     localStorage.setItem('ij_token', accessToken);
+    // A Spotify às vezes manda uma credencial de renovação NOVA — se ignorarmos
+    // isso e continuarmos usando a antiga, ela eventualmente para de funcionar
+    // e o login não consegue mais se renovar sozinho.
+    if (data.refresh_token) localStorage.setItem('ij_refresh', data.refresh_token);
     return true;
   }
   return false;
@@ -890,6 +894,7 @@ async function checkAuth() {
     setInterval(publicarFilaAtual, 10 * 1000); // publica a fila real da Spotify para os alunos verem
     iniciarEscutaPresenca();
     precarregarProximoSpot();
+    setInterval(refreshToken, 45 * 60 * 1000); // renova o login preventivamente a cada 45 min
   }
 }
 
