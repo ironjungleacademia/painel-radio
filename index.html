@@ -550,6 +550,7 @@ let isPlaying = true;
 let pausadoManualmente = false; // true só quando a RECEPÇÃO pausou de propósito pelo botão
 let ultimaTentativaAutoResume = 0;
 let stallDetectadoDesde = null;
+let semConexaoDesde = null;
 let mixCtx = null;
 let mixPlaying = false;
 let ttsBlob = null;
@@ -915,6 +916,17 @@ async function spotifyFetch(endpoint, method='GET', body=null) {
 
 async function fetchCurrentTrack() {
   const data = await spotifyFetch('/me/player');
+  if (data === null) {
+    // Chamada falhou de verdade (rede caiu, ou erro da API) — diferente de
+    // "Spotify respondeu certinho dizendo que não tem nada tocando".
+    if (!semConexaoDesde) {
+      semConexaoDesde = Date.now();
+      showToast('⚠️ Sem conexão com a Spotify — tentando de novo...', 'error');
+    }
+  } else if (semConexaoDesde) {
+    showToast('✅ Conexão com a Spotify restabelecida', 'success');
+    semConexaoDesde = null;
+  }
   if (!data || !data.item) {
     document.getElementById('npTitle').textContent = 'Nenhuma música tocando';
     document.getElementById('npArtist').textContent = 'Abra o Spotify no computador';
