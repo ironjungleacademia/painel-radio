@@ -889,6 +889,7 @@ async function checkAuth() {
     publicarFilaAtual();
     setInterval(publicarFilaAtual, 10 * 1000); // publica a fila real da Spotify para os alunos verem
     iniciarEscutaPresenca();
+    precarregarProximoSpot();
   }
 }
 
@@ -1130,29 +1131,37 @@ function embaralhar(array) {
   return a;
 }
 
+// Retorna os IDs dos spots elegíveis pro sorteio automático (ativos, sem agendamento)
+function getSpotsElegiveisIds() {
+  return spots.filter(s => {
+    if (!s.active) return false;
+    const hasSchedule = Object.values(s.schedule || {}).some(times => times && times.length > 0);
+    return !hasSchedule;
+  }).map(s => s.id);
+}
+
+// Lê (e se preciso reembaralha) o baralho salvo, sem consumir nada dele —
+// usado tanto pra tocar quanto pra saber com antecedência qual é o próximo
+// (e assim pré-carregar o áudio dele).
+function obterBaralhoAtual() {
+  const idsAtivos = getSpotsElegiveisIds();
+  let baralho = JSON.parse(localStorage.getItem('ij_spot_baralho') || '[]');
+  baralho = baralho.filter(id => idsAtivos.includes(id));
+  if (baralho.length === 0 && idsAtivos.length > 0) {
+    baralho = embaralhar(idsAtivos);
+    localStorage.setItem('ij_spot_baralho', JSON.stringify(baralho));
+  }
+  return baralho;
+}
+
 async function triggerAutoSpot() {
   // Reset de segurança — garantir que isSpotPlaying não ficou travado
   isSpotPlaying = false;
 
-  const activeSpots = spots.filter(s => {
-    if (!s.active) return false;
-    const hasSchedule = Object.values(s.schedule || {}).some(times => times && times.length > 0);
-    return !hasSchedule;
-  });
-
-  if (activeSpots.length === 0) {
+  let baralho = obterBaralhoAtual();
+  if (baralho.length === 0) {
     showToast('⚠️ Nenhum spot ativo sem agendamento para tocar!', 'error');
     return;
-  }
-
-  // "Baralho" de spots: toca todos uma vez, em ordem aleatória, antes de repetir
-  // qualquer um — em vez de sortear solto (que pode repetir o mesmo em seguida).
-  const idsAtivos = activeSpots.map(s => s.id);
-  let baralho = JSON.parse(localStorage.getItem('ij_spot_baralho') || '[]');
-  baralho = baralho.filter(id => idsAtivos.includes(id)); // remove ids que não existem/ativos mais
-
-  if (baralho.length === 0) {
-    baralho = embaralhar(idsAtivos); // acabou o baralho — embaralha de novo com os spots atuais
   }
 
   const proximoId = baralho.shift();
@@ -1162,6 +1171,7 @@ async function triggerAutoSpot() {
   if (!spot) return; // segurança, não deveria acontecer
   showToast('🎙️ Tocando spot: ' + spot.name, 'success');
   await playSpotById(spot.id, true, 'aleatorio');
+  precarregarProximoSpot(); // já deixa o próximo pronto para a vez seguinte
 }
 
 async function playSpotById(id, auto=false, motivo='manual', horarioAgendado=null) {
@@ -1192,6 +1202,36 @@ async function playSpotById(id, auto=false, motivo='manual', horarioAgendado=nul
   }
 }
 
+// ── PRÉ-CARREGAMENTO DO PRÓXIMO SPOT ─────────────────────────────────────────
+// Baixa com antecedência o áudio (locutor + trilha) do próximo spot do baralho,
+// para que na hora de tocar de verdade o navegador já tenha em cache — evita
+// aquele "silêncio" entre a Spotify pausar e o spot realmente começar a tocar
+// quando a internet da academia está mais lenta/congestionada.
+let instrumentalPreSelecionado = {};
+
+async function precarregarProximoSpot() {
+  try {
+    const baralho = obterBaralhoAtual();
+    if (baralho.length === 0) return;
+    const proximoId = baralho[0];
+    const spot = spots.find(s => s.id === proximoId);
+    if (!spot) return;
+
+    const ttsData = spot.ttsData || await carregarAudio(spot.id, 'tts');
+    if (ttsData) {
+      const a = new Audio(); a.preload = 'auto'; a.src = ttsData; a.load();
+    }
+
+    const instrumentalData = spot.instrumentalData || await carregarAudio(spot.id, 'instrumental');
+    const instrumentalUrl = instrumentalData || getSampleUrl(spot.instrumental);
+    if (instrumentalUrl) {
+      // Trava essa escolha para o playSpotAudio reaproveitar, em vez de sortear outra
+      instrumentalPreSelecionado[spot.id] = instrumentalUrl;
+      const a2 = new Audio(); a2.preload = 'auto'; a2.src = instrumentalUrl; a2.load();
+    }
+  } catch(e) { /* pré-carregamento é best-effort — falha aqui não deve travar nada */ }
+}
+
 async function playSpotAudio(spot) {
   return new Promise(async resolve => {
     try {
@@ -1211,8 +1251,10 @@ async function playSpotAudio(spot) {
       ttsGain.gain.value = (settings.spotVolume || 80) / 100;
       let musicEl = null, musicGain = null;
 
-      // Usar sample hospedado ou upload personalizado
-      const instrumentalUrl = instrumentalData || getSampleUrl(spot.instrumental);
+      // Usar sample hospedado ou upload personalizado — reaproveita a escolha
+      // já feita pelo pré-carregamento, se existir, em vez de sortear de novo
+      const instrumentalUrl = instrumentalData || instrumentalPreSelecionado[spot.id] || getSampleUrl(spot.instrumental);
+      delete instrumentalPreSelecionado[spot.id];
       if (instrumentalUrl) {
         musicEl = new Audio(instrumentalUrl);
         musicEl.crossOrigin = 'anonymous';
