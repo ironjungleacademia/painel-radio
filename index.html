@@ -2691,6 +2691,16 @@ document.getElementById('songCounter').textContent = songCount;
 if (localStorage.getItem('ij_gate_ok') === '1') {
   liberarPainel();
 }
+
+// Se o navegador restaurar essa página de um estado "congelado" (bfcache —
+// acontece às vezes com navegação acidental de voltar/avançar), o estado do
+// login, conexões e vigias fica desatualizado. Mais seguro recarregar do zero
+// do que tentar continuar com esse estado congelado.
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) {
+    window.location.reload();
+  }
+});
 </script>
 </body>
 </html>
