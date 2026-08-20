@@ -2327,16 +2327,18 @@ function limparHistoricoAvisos() {
   showPage('avisos');
 }
 
-// ── RESTRIÇÕES DE CONTEÚDO (gêneros e artistas bloqueados) ───────────────────
+// ── RESTRIÇÕES DE CONTEÚDO (gêneros, artistas e músicas bloqueadas) ──────────
 let restricaoGeneros = [];
 let restricaoArtistas = [];
+let restricaoMusicas = [];
 
 async function carregarRestricoes() {
-  const { data } = await supabaseClient.from('config').select('chave,valor').in('chave', ['generos_permitidos','artistas_bloqueados']);
+  const { data } = await supabaseClient.from('config').select('chave,valor').in('chave', ['generos_permitidos','artistas_bloqueados','musicas_bloqueadas']);
   const map = {};
   (data || []).forEach(r => map[r.chave] = r.valor);
   restricaoGeneros = (map.generos_permitidos || '').split(',').map(g => g.trim()).filter(Boolean);
   restricaoArtistas = (map.artistas_bloqueados || '').split(',').map(a => a.trim()).filter(Boolean);
+  restricaoMusicas = (map.musicas_bloqueadas || '').split(',').map(m => m.trim()).filter(Boolean);
 }
 
 async function renderRestricoes() {
@@ -2354,7 +2356,7 @@ async function renderRestricoes() {
   content.innerHTML = `
   <div class="page-title">🚫 Restrições de Conteúdo</div>
   <div class="page-sub">Controla o que os alunos podem pedir na página de votação.</div>
-  <div class="grid-2">
+  <div class="grid-3">
     <div class="card card-gold">
       <div class="section-title" style="margin-bottom:4px">🎸 Gêneros Permitidos</div>
       <div style="font-size:13px;color:var(--text-dim);margin-bottom:14px">Só músicas de artistas com esses gêneros aparecem na busca dos alunos.</div>
@@ -2368,13 +2370,24 @@ async function renderRestricoes() {
     </div>
     <div class="card">
       <div class="section-title" style="margin-bottom:4px">🚫 Artistas Bloqueados</div>
-      <div style="font-size:13px;color:var(--text-dim);margin-bottom:14px">Bloqueia um artista específico, mesmo que o gênero dele passe no filtro ao lado.</div>
+      <div style="font-size:13px;color:var(--text-dim);margin-bottom:14px">Bloqueia um artista inteiro, mesmo que o gênero dele passe no filtro.</div>
       <div id="restricaoArtistasList" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
         ${restricaoArtistas.map(a=>`<span class="badge badge-red" style="cursor:pointer" onclick="removerRestricaoArtista('${a.replace(/'/g,"\\'")}')">${a} ✕</span>`).join('') || '<span style="color:var(--text-dim);font-size:13px">Nenhum artista bloqueado</span>'}
       </div>
       <div style="display:flex;gap:8px">
         <input id="novoArtistaInput" placeholder="Nome do artista..." onkeydown="if(event.key==='Enter')adicionarRestricaoArtista()">
         <button class="btn btn-outline btn-sm" onclick="adicionarRestricaoArtista()">+ Add</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title" style="margin-bottom:4px">🎵 Músicas Bloqueadas</div>
+      <div style="font-size:13px;color:var(--text-dim);margin-bottom:14px">Bloqueia uma música específica pelo nome, sem bloquear o artista inteiro.</div>
+      <div id="restricaoMusicasList" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        ${restricaoMusicas.map(m=>`<span class="badge badge-red" style="cursor:pointer" onclick="removerRestricaoMusica('${m.replace(/'/g,"\\'")}')">${m} ✕</span>`).join('') || '<span style="color:var(--text-dim);font-size:13px">Nenhuma música bloqueada</span>'}
+      </div>
+      <div style="display:flex;gap:8px">
+        <input id="novaMusicaInput" placeholder="Nome da música..." onkeydown="if(event.key==='Enter')adicionarRestricaoMusica()">
+        <button class="btn btn-outline btn-sm" onclick="adicionarRestricaoMusica()">+ Add</button>
       </div>
     </div>
   </div>
@@ -2475,6 +2488,24 @@ async function removerRestricaoArtista(artista) {
   await salvarRestricaoArtistas();
   renderRestricoes();
 }
+async function salvarRestricaoMusicas() {
+  await supabaseClient.from('config').upsert([{ chave: 'musicas_bloqueadas', valor: restricaoMusicas.join(',') }]);
+}
+async function adicionarRestricaoMusica() {
+  const input = document.getElementById('novaMusicaInput');
+  const musica = input?.value?.trim().toLowerCase();
+  if (!musica) return;
+  if (restricaoMusicas.includes(musica)) { showToast('⚠️ Música já está bloqueada!', 'error'); return; }
+  restricaoMusicas.push(musica);
+  await salvarRestricaoMusicas();
+  showToast('🚫 Música bloqueada!', 'success');
+  renderRestricoes();
+}
+async function removerRestricaoMusica(musica) {
+  restricaoMusicas = restricaoMusicas.filter(m => m !== musica);
+  await salvarRestricaoMusicas();
+  renderRestricoes();
+}
 
 // ── BLOQUEIO RÁPIDO DA MÚSICA ATUAL ──────────────────────────────────────────
 let musicaAtual = null;
@@ -2486,17 +2517,27 @@ async function bloquearMusicaAtual() {
   }
   const artista = musicaAtual.artista;
   const nomeMusica = musicaAtual.nome;
-  if (!confirm(`Bloquear o artista "${artista}"?\n\nOs alunos não poderão mais pedir músicas desse artista.`)) return;
+  const escolha = prompt(`Bloquear o quê?\n\nDigite:\n1 = Bloquear o ARTISTA inteiro (${artista})\n2 = Bloquear só ESSA música (${nomeMusica})`, '1');
+  if (escolha !== '1' && escolha !== '2') return; // cancelou ou digitou algo inválido
 
   await carregarRestricoes();
-  const artistaLower = artista.toLowerCase();
-  if (!restricaoArtistas.includes(artistaLower)) {
-    restricaoArtistas.push(artistaLower);
-    await salvarRestricaoArtistas();
+  if (escolha === '1') {
+    const artistaLower = artista.toLowerCase();
+    if (!restricaoArtistas.includes(artistaLower)) {
+      restricaoArtistas.push(artistaLower);
+      await salvarRestricaoArtistas();
+    }
+    showToast(`🚫 Artista "${artista}" bloqueado — pulando "${nomeMusica}"`, 'error');
+  } else {
+    const musicaLower = nomeMusica.toLowerCase();
+    if (!restricaoMusicas.includes(musicaLower)) {
+      restricaoMusicas.push(musicaLower);
+      await salvarRestricaoMusicas();
+    }
+    showToast(`🚫 Música "${nomeMusica}" bloqueada`, 'error');
   }
 
   await spotifyNext();
-  showToast(`🚫 "${artista}" bloqueado — pulando "${nomeMusica}"`, 'error');
   if (currentPage === 'restricoes') renderRestricoes();
 }
 
