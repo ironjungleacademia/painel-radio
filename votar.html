@@ -426,8 +426,14 @@ async function verificarStatusVotacao() {
 
   if (!meuUltimo) {
     podeVotarAgora = true;
+  } else if (meuUltimo.tocado_em) {
+    podeVotarAgora = true;
   } else {
-    podeVotarAgora = !!meuUltimo.tocado_em;
+    // Válvula de segurança: se um pedido nunca foi confirmado como tocado
+    // (ex: painel do dono estava fechado no momento), não deixa o aluno
+    // travado para sempre — libera depois de um tempo razoável.
+    const duasHorasAtras = Date.now() - 2 * 60 * 60 * 1000;
+    podeVotarAgora = new Date(meuUltimo.criado_em).getTime() < duasHorasAtras;
   }
 
   if (podeVotarAgora) {
