@@ -289,6 +289,8 @@ async function onLoggedIn(session) {
   await carregarConfig();
   const banido = await verificarBanimento();
   if (banido) return;
+  const foraDoWifi = await verificarWifiAcademia();
+  if (foraDoWifi) return;
   await verificarStatusVotacao();
   await carregarFila();
   await carregarVotacaoPendente();
@@ -364,6 +366,32 @@ async function verificarBanimento() {
     <div class="status-box blocked" style="margin-top:18px">
       <div class="status-icon">🔒</div>
       <div class="status-text">Seu acesso para pedir músicas está suspenso por <b>${restam} dia(s)</b>.<br><br>Fale com a recepção da academia se tiver dúvidas.</div>
+    </div>`;
+  return true;
+}
+
+// ── EXIGIR WI-FI DA ACADEMIA ──────────────────────────────────────────────────
+async function verificarWifiAcademia() {
+  const { data } = await supabaseClient.from('config').select('valor').eq('chave', 'ip_academia').maybeSingle();
+  const ipAcademia = data?.valor?.trim();
+  if (!ipAcademia) return false; // sem IP configurado — não bloqueia ninguém
+
+  let meuIp = null;
+  try {
+    const res = await fetch('https://api.ipify.org?format=json');
+    const j = await res.json();
+    meuIp = j.ip;
+  } catch (e) {
+    return false; // não conseguiu checar — libera por segurança, em vez de travar todo mundo
+  }
+
+  if (meuIp === ipAcademia) return false;
+
+  document.querySelector('.content').innerHTML = `
+    <div class="page-title">Fora da Academia</div>
+    <div class="status-box blocked" style="margin-top:18px">
+      <div class="status-icon">📶</div>
+      <div class="status-text">Você precisa estar <b>conectado ao Wi-Fi da academia</b> para pedir músicas.<br><br>Conecte-se ao Wi-Fi e recarregue a página.</div>
     </div>`;
   return true;
 }

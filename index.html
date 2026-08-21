@@ -2349,6 +2349,8 @@ async function renderRestricoes() {
   await carregarBanidos();
   const recentes = await carregarAlunosRecentes();
   const { data: limiteData } = await supabaseClient.from('config').select('valor').eq('chave', 'limite_dislikes').maybeSingle();
+  const { data: ipData } = await supabaseClient.from('config').select('valor').eq('chave', 'ip_academia').maybeSingle();
+  const ipAcademia = ipData?.valor || '';
   const limiteDislikes = limiteData?.valor || '';
   const agora = Date.now();
   const banidosAtivos = alunosBanidos.filter(b => new Date(b.banido_ate).getTime() > agora);
@@ -2389,6 +2391,17 @@ async function renderRestricoes() {
         <input id="novaMusicaInput" placeholder="Nome da música..." onkeydown="if(event.key==='Enter')adicionarRestricaoMusica()">
         <button class="btn btn-outline btn-sm" onclick="adicionarRestricaoMusica()">+ Add</button>
       </div>
+    </div>
+  </div>
+
+  <div class="sep"></div>
+  <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:3px;color:var(--gold);margin-bottom:6px">📶 ACESSO SÓ PELO WI-FI</div>
+  <div class="card" style="margin-bottom:24px">
+    <div class="section-title" style="margin-bottom:4px">IP da Internet da Academia</div>
+    <div style="font-size:13px;color:var(--text-dim);margin-bottom:14px">Só quem estiver conectado nessa internet consegue pedir música no <code>votar.html</code>. Descubra o IP em <a href="https://whatismyipaddress.com" target="_blank" style="color:var(--gold)">whatismyipaddress.com</a> usando um aparelho ligado no Wi-Fi da academia. Deixe vazio para desativar essa restrição.</div>
+    <div style="display:flex;gap:8px;max-width:320px">
+      <input id="ipAcademiaInput" placeholder="Ex: 191.7.55.55" value="${ipAcademia}">
+      <button class="btn btn-gold btn-sm" onclick="salvarIpAcademia()">Salvar</button>
     </div>
   </div>
 
@@ -2456,6 +2469,12 @@ async function salvarLimiteDislikes() {
   const valor = document.getElementById('limiteDislikesInput').value.trim();
   await supabaseClient.from('config').upsert([{ chave: 'limite_dislikes', valor: valor || '0' }]);
   showToast(valor && parseInt(valor) > 0 ? `✅ Música será pulada com ${valor} reações negativas` : '✅ Recurso desativado', 'success');
+}
+
+async function salvarIpAcademia() {
+  const valor = document.getElementById('ipAcademiaInput').value.trim();
+  await supabaseClient.from('config').upsert([{ chave: 'ip_academia', valor }]);
+  showToast(valor ? '✅ Restrição de Wi-Fi ativada!' : '✅ Restrição de Wi-Fi desativada', 'success');
 }
 
 async function adicionarRestricaoGenero() {
