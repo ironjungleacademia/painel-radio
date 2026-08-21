@@ -486,9 +486,10 @@ async function buscarMusica() {
 
     ultimosResultados = tracks.map(t => {
       const nomeArtista = (t.artists[0]?.name || '').toLowerCase();
+      const nomesTodosArtistas = t.artists.map(a => (a.name || '').toLowerCase());
       const nomeMusica = (t.name || '').toLowerCase();
       const genres = genresByArtistName[nomeArtista] || [];
-      const bloqueadoPorNome = artistasBloqueados.some(a => nomeArtista.includes(a));
+      const bloqueadoPorNome = artistasBloqueados.some(a => nomesTodosArtistas.some(nome => nome.includes(a)));
       const bloqueadoPorMusica = musicasBloqueadas.some(m => nomeMusica.includes(m));
       const permitidoPorGenero = genres.length === 0 || genres.some(g => allowedGenres.some(a => g.toLowerCase().includes(a)));
       const permitido = permitidoPorGenero && !bloqueadoPorNome && !bloqueadoPorMusica;
