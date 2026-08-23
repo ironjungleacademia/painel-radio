@@ -202,6 +202,10 @@ body{font-family:'Rajdhani',sans-serif;background:var(--black);color:var(--text)
 <div class="modal-bg" id="modalHistorico" style="display:none">
   <div class="modal">
     <div class="modal-title">📜 Histórico de Pedidos <button class="modal-close" onclick="fecharModal('modalHistorico')">✕</button></div>
+    <div class="rank-tabs">
+      <button class="rank-tab" id="tabHistTodos" onclick="mudarAbaHistorico('todos')">🌐 Todos</button>
+      <button class="rank-tab" id="tabHistMeu" onclick="mudarAbaHistorico('meu')">👤 Meu Histórico</button>
+    </div>
     <div id="historicoList"><div class="empty-state">Carregando...</div></div>
   </div>
 </div>
@@ -589,7 +593,24 @@ async function pedirMusica(trackId) {
   }
   const track = ultimosResultados.find(t => t.id === trackId);
   if (!track) return;
+  const ok = await enviarPedido(track.id, track.nome, track.artista, track.genero, track.capa);
+  if (!ok) return;
+  ultimosResultados = [];
+  document.getElementById('resultsList').innerHTML = '';
+  document.getElementById('searchInput').value = '';
+}
 
+// Pedir de novo direto do histórico, sem precisar buscar de novo
+async function pedirDoHistorico(trackId, nome, artista, capa) {
+  if (!podeVotarAgora) {
+    showToast('⏳ Aguarde sua vez na fila!', 'error');
+    return;
+  }
+  await enviarPedido(trackId, nome, artista, null, capa);
+}
+
+// Lógica compartilhada de inserir um pedido — usada tanto pela busca quanto pelo histórico
+async function enviarPedido(trackId, musicaNome, artistaNome, genero, capa) {
   const nome = currentUser.user_metadata?.full_name || currentUser.email || 'Aluno';
   const foto = currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || null;
   const { error } = await supabaseClient.from('pedidos').insert([{
@@ -597,25 +618,23 @@ async function pedirMusica(trackId) {
     aluno_nome: nome,
     aluno_email: currentUser.email || null,
     aluno_foto: foto,
-    musica_nome: track.nome,
-    artista_nome: track.artista,
-    spotify_track_id: track.id,
-    genero: track.genero || null,
-    capa: track.capa || null,
+    musica_nome: musicaNome,
+    artista_nome: artistaNome,
+    spotify_track_id: trackId,
+    genero: genero || null,
+    capa: capa || null,
     status: 'pendente'
   }]);
 
   if (error) {
     showToast('❌ Erro ao enviar pedido', 'error');
-    return;
+    return false;
   }
   showToast('✅ Pedido enviado! Sua música entrou na fila.', 'success');
-  ultimosResultados = [];
-  document.getElementById('resultsList').innerHTML = '';
-  document.getElementById('searchInput').value = '';
   await verificarStatusVotacao();
   await carregarFila();
   await carregarVotacaoPendente();
+  return true;
 }
 
 // ── VOTAÇÃO EM ANDAMENTO (músicas pendentes, ordenadas por votos) ───────────
@@ -812,28 +831,59 @@ function fecharModal(id) {
   document.getElementById(id).style.display = 'none';
 }
 
+let abaHistoricoAtual = 'todos';
+
 async function abrirHistorico() {
   document.getElementById('modalHistorico').style.display = 'flex';
+  abaHistoricoAtual = 'todos';
+  atualizarTabsHistorico();
+  await carregarHistoricoAtivo();
+}
+
+function mudarAbaHistorico(aba) {
+  abaHistoricoAtual = aba;
+  atualizarTabsHistorico();
+  carregarHistoricoAtivo();
+}
+
+function atualizarTabsHistorico() {
+  document.getElementById('tabHistTodos').classList.toggle('ativo', abaHistoricoAtual === 'todos');
+  document.getElementById('tabHistMeu').classList.toggle('ativo', abaHistoricoAtual === 'meu');
+}
+
+async function carregarHistoricoAtivo() {
   const el = document.getElementById('historicoList');
   el.innerHTML = '<div class="empty-state">Carregando...</div>';
 
-  const { data, error } = await supabaseClient
+  let query = supabaseClient
     .from('pedidos')
-    .select('musica_nome,artista_nome,aluno_nome,aluno_foto,criado_em')
+    .select('spotify_track_id,musica_nome,artista_nome,capa,aluno_nome,aluno_foto,criado_em')
     .order('criado_em', { ascending: false })
     .limit(50);
 
-  if (error || !data || data.length === 0) { el.innerHTML = '<div class="empty-state">📭 Nenhum pedido ainda.</div>'; return; }
+  if (abaHistoricoAtual === 'meu') query = query.eq('aluno_google_id', currentUser.id);
+
+  const { data, error } = await query;
+
+  if (error || !data || data.length === 0) {
+    el.innerHTML = abaHistoricoAtual === 'meu'
+      ? '<div class="empty-state">📭 Você ainda não pediu nenhuma música.</div>'
+      : '<div class="empty-state">📭 Nenhum pedido ainda.</div>';
+    return;
+  }
 
   el.innerHTML = data.map(p => {
     const inicial = (p.aluno_nome || '?').charAt(0).toUpperCase();
     const quando = new Date(p.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const nomeEsc = (p.musica_nome || '').replace(/'/g, "\\'");
+    const artistaEsc = (p.artista_nome || '').replace(/'/g, "\\'");
     return `<div class="hist-item">
       ${p.aluno_foto ? `<img src="${p.aluno_foto}">` : `<div class="sem-foto-modal">${inicial}</div>`}
       <div class="hist-info">
         <div class="hist-nome">${p.musica_nome} — ${p.artista_nome}</div>
         <div class="hist-meta">${p.aluno_nome} · ${quando}</div>
       </div>
+      <button class="btn btn-outline btn-sm" onclick="pedirDoHistorico('${p.spotify_track_id}','${nomeEsc}','${artistaEsc}','${p.capa || ''}')" ${podeVotarAgora ? '' : 'disabled'}>+ Pedir</button>
     </div>`;
   }).join('');
 }
