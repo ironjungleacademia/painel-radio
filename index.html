@@ -2079,7 +2079,7 @@ async function fireRecepcao() {
 
 // ── CHAMADA DE VEÍCULO ────────────────────────────────────────────────────────
 function montarFraseVeiculo(placa, modelo, cor) {
-  const descricao = [cor, modelo].filter(Boolean).join(' ').trim();
+  const descricao = [modelo, cor].filter(Boolean).join(' ').trim();
   const veiculoTexto = descricao ? `veículo ${descricao}, placa ${placa}` : `veículo de placa ${placa}`;
   return `Atenção! O proprietário do ${veiculoTexto} favor comparecer à recepção. Obrigado!`;
 }
