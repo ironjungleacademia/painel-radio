@@ -1725,9 +1725,19 @@ function renderVeiculo() {
   <div class="page-title">🚗 Chamada de Veículo</div>
   <div class="page-sub">Toca imediatamente via Google TTS, pausando o Spotify.</div>
   <div class="card card-gold">
-    <div class="section-title">Placa do veículo</div>
+    <div class="section-title">Dados do veículo</div>
     <label class="label">Placa</label>
     <input id="veicPlaca" placeholder="Ex: ABC1D23" oninput="updatePreviewVeiculo()" style="margin-bottom:14px;text-transform:uppercase">
+    <div class="grid-2" style="margin-bottom:14px">
+      <div>
+        <label class="label">Modelo (opcional)</label>
+        <input id="veicModelo" placeholder="Ex: Onix, Civic..." oninput="updatePreviewVeiculo()">
+      </div>
+      <div>
+        <label class="label">Cor (opcional)</label>
+        <input id="veicCor" placeholder="Ex: Branco, Prata..." oninput="updatePreviewVeiculo()">
+      </div>
+    </div>
     <label class="label">Voz</label>
     <select id="veicVoz" style="margin-bottom:14px">
       <option value="pt-BR-Wavenet-B" selected>🎙 Masculina — Wavenet B (Natural)</option>
@@ -2068,18 +2078,27 @@ async function fireRecepcao() {
 }
 
 // ── CHAMADA DE VEÍCULO ────────────────────────────────────────────────────────
+function montarFraseVeiculo(placa, modelo, cor) {
+  const descricao = [cor, modelo].filter(Boolean).join(' ').trim();
+  const veiculoTexto = descricao ? `veículo ${descricao}, placa ${placa}` : `veículo de placa ${placa}`;
+  return `Atenção! O proprietário do ${veiculoTexto} favor comparecer à recepção. Obrigado!`;
+}
+
 function updatePreviewVeiculo() {
   const placa = document.getElementById('veicPlaca')?.value?.trim().toUpperCase() || '[placa]';
-  const text = `Atenção! O proprietário do veículo de placa ${placa} favor comparecer à recepção. Obrigado!`;
+  const modelo = document.getElementById('veicModelo')?.value?.trim();
+  const cor = document.getElementById('veicCor')?.value?.trim();
   const el = document.getElementById('veicPreview');
-  if (el) el.textContent = text;
+  if (el) el.textContent = montarFraseVeiculo(placa, modelo, cor);
 }
 
 async function fireVeiculo() {
   const placa = document.getElementById('veicPlaca')?.value?.trim().toUpperCase();
   if (!placa) { showToast('⚠️ Digite a placa do veículo!', 'error'); return; }
+  const modelo = document.getElementById('veicModelo')?.value?.trim();
+  const cor = document.getElementById('veicCor')?.value?.trim();
   const voiceName = document.getElementById('veicVoz')?.value;
-  const text = `Atenção! O proprietário do veículo de placa ${placa} favor comparecer à recepção. Obrigado!`;
+  const text = montarFraseVeiculo(placa, modelo, cor);
 
   const btn = document.getElementById('veicBtn');
   btn.disabled = true; btn.textContent = '⏳ Gerando áudio...';
