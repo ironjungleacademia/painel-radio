@@ -281,6 +281,9 @@ select option{background:var(--dark2)}
     <div class="nav-item" onclick="showPage('recepcao')" id="nav-recepcao">
       <span class="nav-icon">📣</span> Chamada à Recepção
     </div>
+    <div class="nav-item" onclick="showPage('veiculo')" id="nav-veiculo">
+      <span class="nav-icon">🚗</span> Chamada de Veículo
+    </div>
     <div class="nav-item" onclick="showPage('agenda')" id="nav-agenda">
       <span class="nav-icon">📅</span> Agenda da Semana
     </div>
@@ -1328,6 +1331,7 @@ function showPage(page) {
   else if (page === 'spots') content.innerHTML = renderSpots();
   else if (page === 'criar') { openModal(); return; }
   else if (page === 'recepcao') renderRecepcao();
+  else if (page === 'veiculo') renderVeiculo();
   else if (page === 'agenda') content.innerHTML = renderAgenda();
   else if (page === 'avisos') content.innerHTML = renderAvisos();
   else if (page === 'restricoes') renderRestricoes();
@@ -1716,6 +1720,28 @@ function renderRecepcao() {
   document.getElementById('pageContent').innerHTML = html;
 }
 
+function renderVeiculo() {
+  const html = `
+  <div class="page-title">🚗 Chamada de Veículo</div>
+  <div class="page-sub">Toca imediatamente via Google TTS, pausando o Spotify.</div>
+  <div class="card card-gold">
+    <div class="section-title">Placa do veículo</div>
+    <label class="label">Placa</label>
+    <input id="veicPlaca" placeholder="Ex: ABC1D23" oninput="updatePreviewVeiculo()" style="margin-bottom:14px;text-transform:uppercase">
+    <label class="label">Voz</label>
+    <select id="veicVoz" style="margin-bottom:14px">
+      <option value="pt-BR-Wavenet-B" selected>🎙 Masculina — Wavenet B (Natural)</option>
+    </select>
+    <div class="preview-text" id="veicPreview">
+      Atenção! O proprietário do veículo de placa [placa] favor comparecer à recepção. Obrigado!
+    </div>
+    <button class="btn btn-gold btn-full" id="veicBtn" onclick="fireVeiculo()" style="margin-top:4px">
+      🚗 Chamar Agora
+    </button>
+  </div>`;
+  document.getElementById('pageContent').innerHTML = html;
+}
+
 function renderConfig() {
   return `
   <div class="page-title">Configurações</div>
@@ -2039,6 +2065,48 @@ async function fireRecepcao() {
   const retomou = await retomarComVerificacao();
   if (retomou) showToast('✅ Chamada concluída — Spotify retomado', 'success');
   btn.disabled = false; btn.textContent = '📣 Chamar Agora';
+}
+
+// ── CHAMADA DE VEÍCULO ────────────────────────────────────────────────────────
+function updatePreviewVeiculo() {
+  const placa = document.getElementById('veicPlaca')?.value?.trim().toUpperCase() || '[placa]';
+  const text = `Atenção! O proprietário do veículo de placa ${placa} favor comparecer à recepção. Obrigado!`;
+  const el = document.getElementById('veicPreview');
+  if (el) el.textContent = text;
+}
+
+async function fireVeiculo() {
+  const placa = document.getElementById('veicPlaca')?.value?.trim().toUpperCase();
+  if (!placa) { showToast('⚠️ Digite a placa do veículo!', 'error'); return; }
+  const voiceName = document.getElementById('veicVoz')?.value;
+  const text = `Atenção! O proprietário do veículo de placa ${placa} favor comparecer à recepção. Obrigado!`;
+
+  const btn = document.getElementById('veicBtn');
+  btn.disabled = true; btn.textContent = '⏳ Gerando áudio...';
+
+  const audioUrl = await generateGoogleTTS(text, voiceName);
+  if (!audioUrl) { btn.disabled=false; btn.textContent='🚗 Chamar Agora'; return; }
+
+  pausadoManualmente = true;
+  await spotifyPause();
+  await playRadioSignal();
+  await wait(300);
+
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const audio = new Audio(audioUrl);
+    const src = ctx.createMediaElementSource(audio);
+    const gain = ctx.createGain();
+    src.connect(gain); gain.connect(ctx.destination);
+    gain.gain.value = (settings.spotVolume || 80) / 100;
+    audio.play();
+    await new Promise(r => { audio.onended = r; setTimeout(r, 15000); });
+    ctx.close();
+  } catch(e) { showToast('❌ Erro ao reproduzir: ' + e.message, 'error'); }
+
+  const retomou = await retomarComVerificacao();
+  if (retomou) showToast('✅ Chamada concluída — Spotify retomado', 'success');
+  btn.disabled = false; btn.textContent = '🚗 Chamar Agora';
 }
 
 // ── MIXER PREVIEW ─────────────────────────────────────────────────────────────
