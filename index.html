@@ -105,6 +105,14 @@ select option{background:var(--dark2)}
 .badge-gold{background:rgba(201,168,76,.15);color:var(--gold);border:1px solid var(--gold-dim)}
 .badge-green{background:rgba(67,160,71,.15);color:var(--green)}
 .badge-red{background:rgba(229,57,53,.15);color:var(--red)}
+
+/* LISTA COMPACTA (artistas/músicas bloqueadas) */
+.blocklist-box{max-height:240px;overflow-y:auto;border:1px solid var(--dark4);border-radius:8px;margin-bottom:12px}
+.blocklist-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;font-size:13px;border-bottom:1px solid var(--dark4)}
+.blocklist-item:last-child{border-bottom:none}
+.blocklist-item span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.blocklist-item button{background:none;border:none;color:var(--red);cursor:pointer;font-size:15px;padding:0;flex-shrink:0;line-height:1}
+.blocklist-empty{padding:14px;text-align:center;color:var(--text-dim);font-size:13px}
 .badge-blue{background:rgba(25,118,210,.15);color:#64b5f6}
 
 /* MIXER */
@@ -2460,8 +2468,8 @@ async function renderRestricoes() {
     <div class="card">
       <div class="section-title" style="margin-bottom:4px">🚫 Artistas Bloqueados</div>
       <div style="font-size:13px;color:var(--text-dim);margin-bottom:14px">Bloqueia um artista inteiro, mesmo que o gênero dele passe no filtro.</div>
-      <div id="restricaoArtistasList" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
-        ${restricaoArtistas.map(a=>`<span class="badge badge-red" style="cursor:pointer" onclick="removerRestricaoArtista('${a.replace(/'/g,"\\'")}')">${a} ✕</span>`).join('') || '<span style="color:var(--text-dim);font-size:13px">Nenhum artista bloqueado</span>'}
+      <div id="restricaoArtistasList" class="blocklist-box">
+        ${restricaoArtistas.map(a=>`<div class="blocklist-item"><span>${a}</span><button onclick="removerRestricaoArtista('${a.replace(/'/g,"\\'")}')">✕</button></div>`).join('') || '<div class="blocklist-empty">Nenhum artista bloqueado</div>'}
       </div>
       <div style="display:flex;gap:8px">
         <input id="novoArtistaInput" placeholder="Nome do artista..." onkeydown="if(event.key==='Enter')adicionarRestricaoArtista()">
@@ -2471,8 +2479,8 @@ async function renderRestricoes() {
     <div class="card">
       <div class="section-title" style="margin-bottom:4px">🎵 Músicas Bloqueadas</div>
       <div style="font-size:13px;color:var(--text-dim);margin-bottom:14px">Bloqueia uma música específica pelo nome, sem bloquear o artista inteiro.</div>
-      <div id="restricaoMusicasList" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
-        ${restricaoMusicas.map(m=>`<span class="badge badge-red" style="cursor:pointer" onclick="removerRestricaoMusica('${m.replace(/'/g,"\\'")}')">${m} ✕</span>`).join('') || '<span style="color:var(--text-dim);font-size:13px">Nenhuma música bloqueada</span>'}
+      <div id="restricaoMusicasList" class="blocklist-box">
+        ${restricaoMusicas.map(m=>`<div class="blocklist-item"><span>${m}</span><button onclick="removerRestricaoMusica('${m.replace(/'/g,"\\'")}')">✕</button></div>`).join('') || '<div class="blocklist-empty">Nenhuma música bloqueada</div>'}
       </div>
       <div style="display:flex;gap:8px">
         <input id="novaMusicaInput" placeholder="Nome da música..." onkeydown="if(event.key==='Enter')adicionarRestricaoMusica()">
