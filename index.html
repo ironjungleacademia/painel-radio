@@ -1171,8 +1171,7 @@ function obterBaralhoAtual() {
 }
 
 async function triggerAutoSpot() {
-  // Reset de segurança — garantir que isSpotPlaying não ficou travado
-  isSpotPlaying = false;
+  if (isSpotPlaying) return; // já tem outro spot tocando agora — tenta de novo na próxima vez
 
   let baralho = obterBaralhoAtual();
   if (baralho.length === 0) {
@@ -2446,6 +2445,8 @@ async function renderRestricoes() {
   const { data: limiteData } = await supabaseClient.from('config').select('valor').eq('chave', 'limite_dislikes').maybeSingle();
   const { data: ipData } = await supabaseClient.from('config').select('valor').eq('chave', 'ip_academia').maybeSingle();
   const ipAcademia = ipData?.valor || '';
+  const { data: rapBrData } = await supabaseClient.from('config').select('valor').eq('chave', 'bloquear_rap_br').maybeSingle();
+  const bloquearRapBr = rapBrData?.valor === '1';
   const limiteDislikes = limiteData?.valor || '';
   const agora = Date.now();
   const banidosAtivos = alunosBanidos.filter(b => new Date(b.banido_ate).getTime() > agora);
@@ -2487,6 +2488,13 @@ async function renderRestricoes() {
         <button class="btn btn-outline btn-sm" onclick="adicionarRestricaoMusica()">+ Add</button>
       </div>
     </div>
+  </div>
+
+  <div class="card" style="margin-top:16px;margin-bottom:8px">
+    <div class="section-title" style="margin-bottom:4px">🇧🇷 Bloquear Rap e Trap Brasileiro</div>
+    <div style="font-size:13px;color:var(--text-dim);margin-bottom:14px">Bloqueia artistas que o Last.fm marca como rap, trap ou hip-hop e também como brasileiros. Artistas sem essas tags passam; para eles use a lista de Artistas Bloqueados.</div>
+    <button class="btn ${bloquearRapBr ? 'btn-red' : 'btn-gold'} btn-sm" onclick="alternarRapBr(${bloquearRapBr ? 'false' : 'true'})">${bloquearRapBr ? 'Desativar bloqueio' : 'Ativar bloqueio'}</button>
+    <span style="margin-left:10px;font-size:13px;color:var(--text-dim)">${bloquearRapBr ? '✅ Ativado' : 'Desativado'}</span>
   </div>
 
   <div class="sep"></div>
@@ -2564,6 +2572,12 @@ async function salvarLimiteDislikes() {
   const valor = document.getElementById('limiteDislikesInput').value.trim();
   await supabaseClient.from('config').upsert([{ chave: 'limite_dislikes', valor: valor || '0' }]);
   showToast(valor && parseInt(valor) > 0 ? `✅ Música será pulada com ${valor} reações negativas` : '✅ Recurso desativado', 'success');
+}
+
+async function alternarRapBr(ativar) {
+  await supabaseClient.from('config').upsert([{ chave: 'bloquear_rap_br', valor: ativar ? '1' : '0' }]);
+  showToast(ativar ? '✅ Rap e trap brasileiro bloqueados' : '✅ Bloqueio desativado', 'success');
+  renderRestricoes();
 }
 
 async function salvarIpAcademia() {

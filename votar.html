@@ -244,6 +244,7 @@ function chaveMusica(nome, artista) {
 }
 let catalogToken = null;
 let allowedGenres = [];
+let bloquearRapBr = false;
 let artistasBloqueados = [];
 let musicasBloqueadas = [];
 let podeVotarAgora = false;
@@ -414,6 +415,7 @@ async function carregarConfig() {
   if (expira && expira.getTime() < Date.now()) catalogToken = null;
   allowedGenres = (map.generos_permitidos || '').split(',').map(g => g.trim().toLowerCase()).filter(Boolean);
   artistasBloqueados = (map.artistas_bloqueados || '').split(',').map(a => a.trim().toLowerCase()).filter(Boolean);
+  bloquearRapBr = map.bloquear_rap_br === '1';
   musicasBloqueadas = (map.musicas_bloqueadas || '').split(',').map(m => m.trim().toLowerCase()).filter(Boolean);
 }
 
@@ -533,7 +535,11 @@ async function buscarMusica() {
       const tagsUteis = genres.filter(g => !tagsRuido.includes(g.toLowerCase())).slice(0, 3);
       const casaGenero = (g, a) => new RegExp('(^|[^a-z0-9])' + a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^a-z0-9]|$)').test(g.toLowerCase());
       const permitidoPorGenero = tagsUteis.length === 0 || allowedGenres.some(a => casaGenero(tagsUteis[0], a));
-      const permitido = permitidoPorGenero && !bloqueadoPorNome && !bloqueadoPorMusica;
+      const tagsTop = genres.slice(0, 6).map(g => g.toLowerCase());
+      const ehBr = tagsTop.some(g => /(^|[^a-z0-9])(brazil|brazilian|brasil|brasileiro|brasileira|nacional|portuguese)([^a-z0-9]|$)/.test(g));
+      const ehRap = tagsTop.some(g => /(^|[^a-z0-9])(rap|trap|hip[- ]?hop)([^a-z0-9]|$)/.test(g));
+      const bloqueadoRapBr = bloquearRapBr && ehBr && ehRap;
+      const permitido = permitidoPorGenero && !bloqueadoRapBr && !bloqueadoPorNome && !bloqueadoPorMusica;
       return {
         id: t.id,
         nome: t.name,
