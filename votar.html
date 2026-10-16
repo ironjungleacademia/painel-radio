@@ -436,8 +436,8 @@ async function verificarStatusVotacao() {
     // Válvula de segurança: se um pedido nunca foi confirmado como tocado
     // (ex: painel do dono estava fechado no momento), não deixa o aluno
     // travado para sempre — libera depois de um tempo razoável.
-    const duasHorasAtras = Date.now() - 2 * 60 * 60 * 1000;
-    podeVotarAgora = new Date(meuUltimo.criado_em).getTime() < duasHorasAtras;
+    const dezMinAtras = Date.now() - 10 * 60 * 1000;
+    podeVotarAgora = new Date(meuUltimo.criado_em).getTime() < dezMinAtras;
   }
 
   if (podeVotarAgora) {
@@ -529,7 +529,10 @@ async function buscarMusica() {
       const genres = genresByArtistName[nomeArtista] || [];
       const bloqueadoPorNome = artistasBloqueados.some(a => nomesTodosArtistas.some(nome => nome.includes(a)));
       const bloqueadoPorMusica = musicasBloqueadas.some(m => nomeMusica.includes(m));
-      const permitidoPorGenero = genres.length === 0 || genres.some(g => allowedGenres.some(a => g.toLowerCase().includes(a)));
+      const tagsRuido = ['seen live','favorites','favourites','favorite','awesome','good','love','male vocalists','female vocalists','brazilian','brasil','usa','american','british'];
+      const tagsUteis = genres.filter(g => !tagsRuido.includes(g.toLowerCase())).slice(0, 3);
+      const casaGenero = (g, a) => new RegExp('(^|[^a-z0-9])' + a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^a-z0-9]|$)').test(g.toLowerCase());
+      const permitidoPorGenero = tagsUteis.length === 0 || allowedGenres.some(a => casaGenero(tagsUteis[0], a));
       const permitido = permitidoPorGenero && !bloqueadoPorNome && !bloqueadoPorMusica;
       return {
         id: t.id,
