@@ -132,6 +132,16 @@ body{font-family:'Rajdhani',sans-serif;background:var(--black);color:var(--text)
 
 .spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--dark4);border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+.busca-prog{background:var(--dark2);border:1px solid var(--dark4);border-radius:14px;padding:18px 16px;margin-top:8px}
+.busca-eq{display:flex;align-items:flex-end;justify-content:center;gap:4px;height:28px;margin-bottom:14px}
+.busca-eq span{width:5px;height:100%;background:var(--gold);border-radius:3px;transform-origin:bottom;animation:eq .9s ease-in-out infinite}
+.busca-eq span:nth-child(2){animation-delay:.15s}.busca-eq span:nth-child(3){animation-delay:.3s}.busca-eq span:nth-child(4){animation-delay:.45s}.busca-eq span:nth-child(5){animation-delay:.6s}
+.busca-etapa{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:14px;color:var(--text-dim);transition:color .3s}
+.busca-etapa.ativa{color:var(--gold-light);font-weight:700}
+.busca-etapa.feita{color:var(--green)}
+.busca-etapa .ic{width:20px;text-align:center}
+.busca-barra{height:4px;background:var(--dark4);border-radius:2px;margin-top:12px;overflow:hidden}
+.busca-barra div{height:100%;width:0;background:var(--gold);border-radius:2px;transition:width .4s}
 
 ::-webkit-scrollbar{width:5px}
 ::-webkit-scrollbar-track{background:var(--dark)}
@@ -481,6 +491,28 @@ async function obterGenerosArtista(nomeArtista) {
   }
 }
 
+function mostrarProgressoBusca() {
+  document.getElementById('resultsList').innerHTML = `
+    <div class="busca-prog">
+      <div class="busca-eq"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="busca-etapa" id="etapa1"><span class="ic">🎵</span><span id="etapa1txt">Buscando no Spotify...</span></div>
+      <div class="busca-etapa" id="etapa2"><span class="ic">🎸</span><span id="etapa2txt">Identificando o gênero dos artistas</span></div>
+      <div class="busca-etapa" id="etapa3"><span class="ic">🗳️</span><span id="etapa3txt">Conferindo os votos</span></div>
+      <div class="busca-barra"><div id="buscaBarra"></div></div>
+    </div>`;
+  atualizarEtapaBusca(1, 'ativa', null, 8);
+}
+function atualizarEtapaBusca(n, estado, texto, pct) {
+  const el = document.getElementById('etapa' + n);
+  if (!el) return;
+  el.className = 'busca-etapa ' + estado;
+  const ic = el.querySelector('.ic');
+  if (estado === 'feita') ic.textContent = '✅';
+  if (texto) document.getElementById('etapa' + n + 'txt').textContent = texto;
+  const barra = document.getElementById('buscaBarra');
+  if (barra && pct != null) barra.style.width = pct + '%';
+}
+
 async function buscarMusica() {
   const q = document.getElementById('searchInput').value.trim();
   if (!q) return;
@@ -490,7 +522,7 @@ async function buscarMusica() {
   }
   const btn = document.getElementById('searchBtn');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
-  document.getElementById('resultsList').innerHTML = '<div class="empty-state">Buscando...</div>';
+  mostrarProgressoBusca();
 
   try {
     // A Spotify limita cada busca a no máximo 10 resultados (mudança de fev/2026).
@@ -518,11 +550,17 @@ async function buscarMusica() {
     // Filtrar por gênero permitido usando o Last.fm (a Spotify não fornece mais
     // gênero de artista de forma confiável). Resultados ficam em cache no Supabase
     // para não estourar o limite de 2 consultas/segundo do Last.fm.
+    atualizarEtapaBusca(1, 'feita', 'Busca no Spotify concluída', 35);
     const nomesArtistas = [...new Set(tracks.map(t => (t.artists[0]?.name || '').trim()).filter(Boolean))];
     let genresByArtistName = {};
+    atualizarEtapaBusca(2, 'ativa', 'Identificando o gênero dos artistas (0/' + nomesArtistas.length + ')', 40);
+    let feitos = 0;
     for (const nome of nomesArtistas) {
       genresByArtistName[nome.toLowerCase()] = await obterGenerosArtista(nome);
+      feitos++;
+      atualizarEtapaBusca(2, 'ativa', 'Identificando o gênero dos artistas (' + feitos + '/' + nomesArtistas.length + ')', 40 + Math.round(45 * feitos / nomesArtistas.length));
     }
+    atualizarEtapaBusca(2, 'feita', 'Gêneros verificados', 85);
 
     ultimosResultados = tracks.map(t => {
       const nomeArtista = (t.artists[0]?.name || '').toLowerCase();
@@ -533,8 +571,9 @@ async function buscarMusica() {
       const bloqueadoPorMusica = musicasBloqueadas.some(m => nomeMusica.includes(m));
       const tagsRuido = ['seen live','favorites','favourites','favorite','awesome','good','love','male vocalists','female vocalists','brazilian','brasil','usa','american','british'];
       const tagsUteis = genres.filter(g => !tagsRuido.includes(g.toLowerCase())).slice(0, 3);
-      const casaGenero = (g, a) => new RegExp('(^|[^a-z0-9])' + a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^a-z0-9]|$)').test(g.toLowerCase());
-      const permitidoPorGenero = tagsUteis.length === 0 || allowedGenres.some(a => casaGenero(tagsUteis[0], a));
+      const casaGenero = (g, a) => g.toLowerCase().replace(/dancehall/g, 'reggae-hall').includes(a);
+      const tagCasa = g => allowedGenres.some(a => casaGenero(g, a));
+      const permitidoPorGenero = tagsUteis.length === 0 || tagCasa(tagsUteis[0]) || tagsUteis.slice(0, 3).filter(tagCasa).length >= 2;
       const tagsTop = genres.slice(0, 6).map(g => g.toLowerCase());
       const ehBr = tagsTop.some(g => /(^|[^a-z0-9])(brazil|brazilian|brasil|brasileiro|brasileira|nacional|portuguese)([^a-z0-9]|$)/.test(g));
       const ehRap = tagsTop.some(g => /(^|[^a-z0-9])(rap|trap|hip[- ]?hop)([^a-z0-9]|$)/.test(g));
@@ -552,6 +591,7 @@ async function buscarMusica() {
 
     // Anexa quantos votos cada resultado já tem na votação em andamento
     // (contando pelo nome da música + artista, não pela versão/álbum exata)
+    atualizarEtapaBusca(3, 'ativa', null, 90);
     if (ultimosResultados.length > 0) {
       const { data: votosAtuais } = await supabaseClient
         .from('pedidos')
@@ -565,9 +605,12 @@ async function buscarMusica() {
       ultimosResultados.forEach(t => { t.votos = contagem[chaveMusica(t.nome, t.artista)] || 0; });
     }
 
+    atualizarEtapaBusca(3, 'feita', 'Votos conferidos', 100);
+    await new Promise(r => setTimeout(r, 250));
     renderizarResultados(ultimosResultados);
   } catch (e) {
     showToast('❌ Erro ao buscar músicas', 'error');
+    document.getElementById('resultsList').innerHTML = '';
   } finally {
     btn.disabled = false; btn.textContent = '🔍';
   }
