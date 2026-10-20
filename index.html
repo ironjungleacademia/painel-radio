@@ -2425,14 +2425,16 @@ function limparHistoricoAvisos() {
 let restricaoGeneros = [];
 let restricaoArtistas = [];
 let restricaoMusicas = [];
+let restricaoGenerosBloq = [];
 
 async function carregarRestricoes() {
-  const { data } = await supabaseClient.from('config').select('chave,valor').in('chave', ['generos_permitidos','artistas_bloqueados','musicas_bloqueadas']);
+  const { data } = await supabaseClient.from('config').select('chave,valor').in('chave', ['generos_permitidos','artistas_bloqueados','musicas_bloqueadas','generos_bloqueados']);
   const map = {};
   (data || []).forEach(r => map[r.chave] = r.valor);
   restricaoGeneros = (map.generos_permitidos || '').split(',').map(g => g.trim()).filter(Boolean);
   restricaoArtistas = (map.artistas_bloqueados || '').split(',').map(a => a.trim()).filter(Boolean);
   restricaoMusicas = (map.musicas_bloqueadas || '').split(',').map(m => m.trim()).filter(Boolean);
+  restricaoGenerosBloq = (map.generos_bloqueados || '').split(',').map(g => g.trim()).filter(Boolean);
 }
 
 async function renderRestricoes() {
@@ -2487,6 +2489,18 @@ async function renderRestricoes() {
         <input id="novaMusicaInput" placeholder="Nome da música..." onkeydown="if(event.key==='Enter')adicionarRestricaoMusica()">
         <button class="btn btn-outline btn-sm" onclick="adicionarRestricaoMusica()">+ Add</button>
       </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="section-title" style="margin-bottom:4px">⛔ Gêneros Bloqueados</div>
+    <div style="font-size:13px;color:var(--text-dim);margin-bottom:14px">Bloqueia artistas que tenham esse gênero entre as primeiras tags, mesmo que também tenham um gênero permitido. Ex: k-pop, reggae, sertanejo.</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      ${restricaoGenerosBloq.map(g=>`<span class="badge badge-gold" style="cursor:pointer" onclick="removerGeneroBloq('${g.replace(/'/g,"\\'")}')">${g} ✕</span>`).join('') || '<span style="color:var(--text-dim);font-size:13px">Nenhum gênero bloqueado</span>'}
+    </div>
+    <div style="display:flex;gap:8px;max-width:420px">
+      <input id="novoGeneroBloqInput" placeholder="Ex: k-pop..." onkeydown="if(event.key==='Enter')adicionarGeneroBloq()">
+      <button class="btn btn-outline btn-sm" onclick="adicionarGeneroBloq()">+ Add</button>
     </div>
   </div>
 
@@ -2599,6 +2613,20 @@ async function adicionarRestricaoGenero() {
 async function removerRestricaoGenero(genero) {
   restricaoGeneros = restricaoGeneros.filter(g => g !== genero);
   await salvarRestricaoGeneros();
+  renderRestricoes();
+}
+async function adicionarGeneroBloq() {
+  const g = document.getElementById('novoGeneroBloqInput')?.value?.trim().toLowerCase();
+  if (!g) return;
+  if (restricaoGenerosBloq.includes(g)) { showToast('⚠️ Gênero já está bloqueado!', 'error'); return; }
+  restricaoGenerosBloq.push(g);
+  await supabaseClient.from('config').upsert([{ chave: 'generos_bloqueados', valor: restricaoGenerosBloq.join(',') }]);
+  showToast('⛔ Gênero bloqueado!', 'success');
+  renderRestricoes();
+}
+async function removerGeneroBloq(g) {
+  restricaoGenerosBloq = restricaoGenerosBloq.filter(x => x !== g);
+  await supabaseClient.from('config').upsert([{ chave: 'generos_bloqueados', valor: restricaoGenerosBloq.join(',') }]);
   renderRestricoes();
 }
 async function adicionarRestricaoArtista() {
