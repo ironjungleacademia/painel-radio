@@ -597,6 +597,9 @@ async function salvarTokenCatalogoNoSupabase() {
 }
   let enviandoPedidos = false;
   let ultimoEnvioFila = 0;
+  let restanteTrackMs = null; // quanto falta da música atual (ms), medido no último polling
+  let restanteMedidoEm = 0;
+  let restantePausado = false;
 // Chave usada para agrupar votos pelo NOME da música + artista, ignorando
 // de qual álbum/versão específica cada voto veio na Spotify.
 function chaveMusica(nome, artista) {
@@ -675,6 +678,13 @@ async function enviarPedidosParaFila() {
       }
     }
     if (aEnviar.length === 0) return;
+
+    // Só envia para a fila real quando faltarem 10 segundos ou menos para a música
+    // atual acabar — até lá os pedidos continuam em "Concorrendo" somando votos.
+    if (restanteTrackMs !== null) {
+      const resta = restantePausado ? restanteTrackMs : restanteTrackMs - (Date.now() - restanteMedidoEm);
+      if (resta > 10000) return;
+    }
 
     const proximaFila = (filaSpotify.queue || [])[0];
     if (proximaFila) {
@@ -977,6 +987,12 @@ async function fetchCurrentTrack() {
   } else if (semConexaoDesde) {
     showToast('✅ Conexão com a Spotify restabelecida', 'success');
     semConexaoDesde = null;
+  }
+  if (data && !data.item) restanteTrackMs = null; // nada tocando: pedidos podem ser enviados sem esperar
+  if (data && data.item && data.item.duration_ms) {
+    restanteTrackMs = Math.max(0, data.item.duration_ms - (data.progress_ms || 0));
+    restanteMedidoEm = Date.now();
+    restantePausado = !data.is_playing;
   }
   if (!data || !data.item) {
     document.getElementById('npTitle').textContent = 'Nenhuma música tocando';
