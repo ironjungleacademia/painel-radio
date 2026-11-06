@@ -662,6 +662,14 @@ async function enviarPedidosParaFila() {
     // enviada, quando não há nenhuma música de aluno esperando na fila. Até lá, os
     // votos continuam somando e a mais votada é a escolhida na hora do envio.
     if (Date.now() - ultimoEnvioFila < 8000) return; // dá tempo da Spotify refletir o envio anterior
+    // Nada é processado (nem enviado, nem somado a uma música já na fila) antes disso.
+    // Só envia para a fila real quando faltarem 10 segundos ou menos para a música
+    // atual acabar — até lá os pedidos continuam em "Concorrendo" somando votos.
+    if (restanteTrackMs !== null) {
+      const resta = restantePausado ? restanteTrackMs : restanteTrackMs - (Date.now() - restanteMedidoEm);
+      if (resta > 10000) return;
+    }
+
     const filaSpotify = await spotifyFetch('/me/player/queue');
     if (!filaSpotify) return;
     // Músicas que já estão na fila real (ou tocando agora), mesmo vindas da playlist:
@@ -680,13 +688,6 @@ async function enviarPedidosParaFila() {
       }
     }
     if (aEnviar.length === 0) return;
-
-    // Só envia para a fila real quando faltarem 10 segundos ou menos para a música
-    // atual acabar — até lá os pedidos continuam em "Concorrendo" somando votos.
-    if (restanteTrackMs !== null) {
-      const resta = restantePausado ? restanteTrackMs : restanteTrackMs - (Date.now() - restanteMedidoEm);
-      if (resta > 10000) return;
-    }
 
     const proximaFila = (filaSpotify.queue || [])[0];
     if (proximaFila) {
