@@ -655,6 +655,15 @@ async function pedirMusica(trackId) {
   document.getElementById('searchInput').value = '';
 }
 
+// Pedir direto das listas "Concorrendo para Tocar" e "A Seguir na Academia"
+let itensPedirVotacao = [];
+let itensPedirFila = [];
+function pedirDaLista(origem, i) {
+  const t = (origem === 'votacao' ? itensPedirVotacao : itensPedirFila)[i];
+  if (!t) return;
+  return pedirDoHistorico(t.id, t.nome, t.artista, t.capa);
+}
+
 // Pedir de novo direto do histórico, sem precisar buscar de novo
 async function pedirDoHistorico(trackId, nome, artista, capa) {
   if (!podeVotarAgora) {
@@ -717,6 +726,7 @@ async function carregarVotacaoPendente() {
     return new Date(a.criado_em) - new Date(b.criado_em);
   });
 
+  itensPedirVotacao = ranking.map(t => ({ id: t.spotify_track_id, nome: t.musica_nome, artista: t.artista_nome, capa: t.capa || '' }));
   el.innerHTML = ranking.map((t, i) => `
     <div class="queue-item">
       <div class="queue-pos">${i + 1}</div>
@@ -726,6 +736,7 @@ async function carregarVotacaoPendente() {
         <div class="queue-meta">${t.artista_nome}</div>
       </div>
       <div class="voto-badge">🗳️ ${t.votos}</div>
+      <button class="pedir-btn" ${podeVotarAgora ? '' : 'disabled'} onclick="pedirDaLista('votacao', ${i})">+ Pedir</button>
     </div>`).join('');
 }
 
@@ -814,6 +825,7 @@ async function carregarFila() {
     return;
   }
 
+  itensPedirFila = proximas.map(t => ({ id: t.id, nome: t.nome, artista: t.artista, capa: t.capa || '' }));
   listEl.innerHTML = proximas.map((t, i) => `
     <div class="queue-item">
       <div class="queue-pos">${i + 1}</div>
@@ -823,6 +835,7 @@ async function carregarFila() {
         <div class="queue-meta">${t.artista}</div>
       </div>
       ${renderBadgePedido(t.nome, t.artista)}
+      <button class="pedir-btn" ${podeVotarAgora ? '' : 'disabled'} onclick="pedirDaLista('fila', ${i})">+ Pedir</button>
     </div>`).join('');
 }
 

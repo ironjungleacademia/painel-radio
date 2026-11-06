@@ -596,6 +596,7 @@ async function salvarTokenCatalogoNoSupabase() {
   ]);
 }
   let enviandoPedidos = false;
+  let ultimoEnvioFila = 0;
 // Chave usada para agrupar votos pelo NOME da música + artista, ignorando
 // de qual álbum/versão específica cada voto veio na Spotify.
 function chaveMusica(nome, artista) {
@@ -640,32 +641,50 @@ async function enviarPedidosParaFila() {
       .gt('enviado_em', vinteMinAtras);
     const jaEnviadosRecentemente = new Set((enviosRecentes || []).map(p => chaveMusica(p.musica_nome, p.artista_nome)));
 
+    // 1) Músicas que já estão na fila real: só soma o(s) voto(s) novo(s), sem duplicar o envio
+    const restantes = [];
     for (const grupo of ranking) {
-      const primeiro = grupo[0]; // quem votou primeiro — a versão/álbum dele é a que vai tocar
-      const idsGrupo = grupo.map(p => p.id);
+      const primeiro = grupo[0];
       const chave = chaveMusica(primeiro.musica_nome, primeiro.artista_nome);
-
       if (jaEnviadosRecentemente.has(chave)) {
-        // Já está na fila real — só soma o(s) voto(s) novo(s), sem duplicar o envio
-        await supabaseClient.from('pedidos').update({ status: 'enviado', enviado_em: new Date().toISOString() }).in('id', idsGrupo);
-        continue;
+        await supabaseClient.from('pedidos').update({ status: 'enviado', enviado_em: new Date().toISOString() }).in('id', grupo.map(p => p.id));
+      } else {
+        restantes.push(grupo);
       }
+    }
+    if (restantes.length === 0) return;
 
-      const uri = 'spotify:track:' + primeiro.spotify_track_id;
-      const resultado = await spotifyFetch('/me/player/queue?uri=' + encodeURIComponent(uri), 'POST');
-      if (resultado !== null) {
-        const { error: erroUpdate } = await supabaseClient
-          .from('pedidos')
-          .update({ status: 'enviado', enviado_em: new Date().toISOString() })
-          .in('id', idsGrupo);
-        if (erroUpdate) {
-          console.error('Erro ao marcar pedidos como enviados:', erroUpdate);
-          showToast('⚠️ Pedido enviado mas houve erro ao atualizar status: ' + primeiro.musica_nome, 'error');
-        } else {
-          const votos = grupo.length;
-          showToast(`🎵 Enviado à fila: ${primeiro.musica_nome}${votos > 1 ? ' (' + votos + ' votos)' : ''}`, 'success');
-          publicarFilaAtual(); // atualiza a fila que os alunos veem sem esperar o próximo ciclo de 10s
-        }
+    // 2) A fila real da Spotify não permite reordenar, então a música mais votada
+    // "sobe para o topo" assim: os pedidos ficam retidos e só UMA música por vez é
+    // enviada, quando não há nenhuma música de aluno esperando na fila. Até lá, os
+    // votos continuam somando e a mais votada é a escolhida na hora do envio.
+    if (Date.now() - ultimoEnvioFila < 8000) return; // dá tempo da Spotify refletir o envio anterior
+    const filaSpotify = await spotifyFetch('/me/player/queue');
+    if (!filaSpotify) return;
+    const proximaFila = (filaSpotify.queue || [])[0];
+    if (proximaFila) {
+      const chaveProxima = chaveMusica(proximaFila.name, (proximaFila.artists || []).map(a => a.name).join(', '));
+      if (jaEnviadosRecentemente.has(chaveProxima)) return; // já tem música de aluno esperando
+    }
+
+    const grupo = restantes[0]; // a mais votada (empate: quem pediu primeiro)
+    const primeiro = grupo[0]; // quem votou primeiro — a versão/álbum dele é a que vai tocar
+    const idsGrupo = grupo.map(p => p.id);
+    const uri = 'spotify:track:' + primeiro.spotify_track_id;
+    const resultado = await spotifyFetch('/me/player/queue?uri=' + encodeURIComponent(uri), 'POST');
+    if (resultado !== null) {
+      ultimoEnvioFila = Date.now();
+      const { error: erroUpdate } = await supabaseClient
+        .from('pedidos')
+        .update({ status: 'enviado', enviado_em: new Date().toISOString() })
+        .in('id', idsGrupo);
+      if (erroUpdate) {
+        console.error('Erro ao marcar pedidos como enviados:', erroUpdate);
+        showToast('⚠️ Pedido enviado mas houve erro ao atualizar status: ' + primeiro.musica_nome, 'error');
+      } else {
+        const votos = grupo.length;
+        showToast(`🎵 Enviado à fila: ${primeiro.musica_nome}${votos > 1 ? ' (' + votos + ' votos)' : ''}`, 'success');
+        publicarFilaAtual(); // atualiza a fila que os alunos veem sem esperar o próximo ciclo de 10s
       }
     }
   } finally {
