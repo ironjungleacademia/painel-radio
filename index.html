@@ -669,9 +669,11 @@ async function enviarPedidosParaFila() {
     const nomeArtistasTrack = t => (t.artists || []).map(a => a.name).join(', ');
     const chavesNaFila = new Set((filaSpotify.queue || []).map(t => chaveMusica(t.name, nomeArtistasTrack(t))));
     if (filaSpotify.currently_playing) chavesNaFila.add(chaveMusica(filaSpotify.currently_playing.name, nomeArtistasTrack(filaSpotify.currently_playing)));
+    const idsNaFila = new Set((filaSpotify.queue || []).map(t => t.id));
+    if (filaSpotify.currently_playing) idsNaFila.add(filaSpotify.currently_playing.id);
     const aEnviar = [];
     for (const g of restantes) {
-      if (chavesNaFila.has(chaveMusica(g[0].musica_nome, g[0].artista_nome))) {
+      if (chavesNaFila.has(chaveMusica(g[0].musica_nome, g[0].artista_nome)) || g.some(p => idsNaFila.has(p.spotify_track_id))) {
         await supabaseClient.from('pedidos').update({ status: 'enviado', enviado_em: new Date().toISOString() }).in('id', g.map(p => p.id));
       } else {
         aEnviar.push(g);
