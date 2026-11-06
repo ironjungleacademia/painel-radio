@@ -661,13 +661,28 @@ async function enviarPedidosParaFila() {
     if (Date.now() - ultimoEnvioFila < 8000) return; // dá tempo da Spotify refletir o envio anterior
     const filaSpotify = await spotifyFetch('/me/player/queue');
     if (!filaSpotify) return;
+    // Músicas que já estão na fila real (ou tocando agora), mesmo vindas da playlist:
+    // não dá para mover nem duplicar, então o voto só é contabilizado.
+    const nomeArtistasTrack = t => (t.artists || []).map(a => a.name).join(', ');
+    const chavesNaFila = new Set((filaSpotify.queue || []).map(t => chaveMusica(t.name, nomeArtistasTrack(t))));
+    if (filaSpotify.currently_playing) chavesNaFila.add(chaveMusica(filaSpotify.currently_playing.name, nomeArtistasTrack(filaSpotify.currently_playing)));
+    const aEnviar = [];
+    for (const g of restantes) {
+      if (chavesNaFila.has(chaveMusica(g[0].musica_nome, g[0].artista_nome))) {
+        await supabaseClient.from('pedidos').update({ status: 'enviado', enviado_em: new Date().toISOString() }).in('id', g.map(p => p.id));
+      } else {
+        aEnviar.push(g);
+      }
+    }
+    if (aEnviar.length === 0) return;
+
     const proximaFila = (filaSpotify.queue || [])[0];
     if (proximaFila) {
-      const chaveProxima = chaveMusica(proximaFila.name, (proximaFila.artists || []).map(a => a.name).join(', '));
+      const chaveProxima = chaveMusica(proximaFila.name, nomeArtistasTrack(proximaFila));
       if (jaEnviadosRecentemente.has(chaveProxima)) return; // já tem música de aluno esperando
     }
 
-    const grupo = restantes[0]; // a mais votada (empate: quem pediu primeiro)
+    const grupo = aEnviar[0]; // a mais votada (empate: quem pediu primeiro)
     const primeiro = grupo[0]; // quem votou primeiro — a versão/álbum dele é a que vai tocar
     const idsGrupo = grupo.map(p => p.id);
     const uri = 'spotify:track:' + primeiro.spotify_track_id;
